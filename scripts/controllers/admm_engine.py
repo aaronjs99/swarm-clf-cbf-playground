@@ -7,7 +7,7 @@ class ADMMSolver:
         self.rho = rho
         self.num_iters = num_iters
 
-    def step(self, agent_id, u_nom, P, q, G, b, state_manager, network):
+    def step(self, agent_id, u_nom, P, q, G, b, state_manager, network, a_max):
         dim = len(u_nom)
         state_manager.initialize_agent(agent_id, dim)
 
@@ -22,7 +22,7 @@ class ADMMSolver:
             P_aug = P + self.rho * np.eye(dim)
             q_aug = q - self.rho * (z - y)
 
-            sol = solve_qp_safe(P_aug, q_aug, G, b)
+            sol = solve_qp_safe(P_aug, q_aug, G, b, a_max)
             if sol is not None:
                 u_local = sol
 

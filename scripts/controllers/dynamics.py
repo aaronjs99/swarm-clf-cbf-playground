@@ -8,11 +8,11 @@ from utils.geometry import project_to_tangent_plane_3d, get_tangent_2d
 class SwarmController:
     def __init__(self, a_max=15.0, k1=10.0, k2=10.0):
         self.a_max, self.k1, self.k2 = a_max, k1, k2
-        self.safe_buffer = 0.45
-        # Lower rho (stiffness) prevents the agents from snapping together
+        self.safe_buffer = 0.65
         self.solver = ADMMSolver(rho=0.1, num_iters=2)
         self.state_manager = SwarmStateManager()
         self.network = SwarmNetwork(k_neighbors=3)
+        self.last_l2 = 0.0
 
     def compute_control(self, x, v, goal, obstacles, agent_idx, all_agents):
         if agent_idx == 0:
@@ -27,11 +27,23 @@ class SwarmController:
             if i != agent_idx
         ]
 
-        u_nom = self._get_nominal_control(x, v, goal, threats, is_2d)
+        # 1. Connectivity Maintenance Force
+        # We treat this as part of the 'nominal' desire,
+        # ensuring the agent doesn't pick a path that breaks the swarm.
+        conn_grad, l2 = self.network.get_connectivity_gradient(agent_idx, all_agents)
+        if agent_idx == 0:
+            self.last_l2 = l2
+        # Gain for connectivity (tune as needed)
+        k_conn = 5.0 if l2 < 0.5 else 0.0
+        u_conn = k_conn * conn_grad
 
-        # 2. Local QP Matrices: Individual goal intent
+        # 2. Get standard nominal control and add connectivity bias
+        u_nom_orig = self._get_nominal_control(x, v, goal, threats, is_2d)
+        u_nom = np.clip(u_nom_orig, -0.8 * self.a_max, 0.8 * self.a_max)
+
+        # 3. Local QP Matrices
         P = np.eye(3)
-        q = -u_nom  # This defines the unique path for this agent
+        q = -u_nom
         G, b = self._get_constraints(x, v, threats, is_2d)
 
         # 3. Decentralized ADMM Negotiation
@@ -44,6 +56,7 @@ class SwarmController:
             np.array(b),
             self.state_manager,
             self.network,
+            self.a_max,
         )
 
         return u_opt
