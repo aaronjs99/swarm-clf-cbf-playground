@@ -82,6 +82,9 @@ class SamplingMPCPlanner:
         Samples candidate controls, evaluates them, and returns the best one.
         Returns None if planner is disabled or fails.
         """
+        g = 0.0 if is_2d else 9.8
+        g_vec = np.array([0.0, 0.0, -g], dtype=float)
+
         if not self.enabled:
             return None
 
@@ -194,7 +197,7 @@ class SamplingMPCPlanner:
 
             # Integrate over horizon
             for _ in range(self.H):
-                curr_v = curr_v + u * self.dt
+                curr_v = curr_v + (u + g_vec) * self.dt
                 curr_x = curr_x + curr_v * self.dt
                 if is_2d:
                     curr_x[2] = 0.0

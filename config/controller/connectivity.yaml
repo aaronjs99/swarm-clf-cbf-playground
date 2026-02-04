@@ -1,6 +1,6 @@
 controller:
   connectivity:
-    enabled: true
+    enabled: false
     k_neighbors: 3
     gain: 5.0
     l2_threshold: 0.5

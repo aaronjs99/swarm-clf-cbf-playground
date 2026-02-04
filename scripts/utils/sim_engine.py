@@ -46,9 +46,19 @@ def run_simulation(cfg, ctrl):
     max_frames = int(term_cfg["max_frames"])
     frames_after_reach = int(np.ceil(settle_seconds / (dt * sub_steps)))
 
+    # Dynamics realism config
+    dyn_cfg = sim_cfg.get("dynamics", {}) or {}
+
     # Init State
     agents = [
-        {"pos": p.copy(), "goal": goals_init[i].copy(), "vel": np.zeros(3), "path": []}
+        {
+            "pos": p.copy(),
+            "goal": goals_init[i].copy(),
+            "vel": np.zeros(3),
+            # Applied acceleration state for actuator lag realism
+            "acc": np.zeros(3),
+            "path": [],
+        }
         for i, p in enumerate(agents_init)
     ]
     logger = SafetyLogger(len(agents))
@@ -121,6 +131,8 @@ def run_simulation(cfg, ctrl):
             dim=dim,
             w_cfg=cfg["world"]["obstacles"].get("walls", {}),
             dyn_cfg=cfg["world"]["obstacles"].get("dynamic", {}) or {},
+            # new: agent dynamics realism section
+            agent_dyn_cfg=dyn_cfg,
             sub_steps=sub_steps,
             agent_radius=float(cbf_cfg["agent_radius"]),
             logger=logger,

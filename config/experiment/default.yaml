@@ -1,5 +1,4 @@
 include:
-  - ../base.yaml
   - ../sim/default.yaml
   - ../viz/live.yaml
   - ../world/2d_lanes.yaml

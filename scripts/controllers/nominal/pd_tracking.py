@@ -1,24 +1,44 @@
 import numpy as np
+from utils.geometry import as3
 
 
 class PDTrackingStrategy:
-    def __init__(self, cfg):
-        self.v_damp_far = float(cfg.get("controller.nominal.v_damp_far", 2.0))
-        self.pd_switch_dist = float(cfg.get("controller.nominal.pd.switch_dist", 0.1))
-        self.pd_kp = float(cfg.get("controller.nominal.pd.kp", 5.0))
-        self.pd_kd = float(cfg.get("controller.nominal.pd.kd", 3.0))
-        self.a_max = float(
-            cfg.get("limits.a_max", 15.0)
-        )  # Ensure this is passed or available
+    """
+    Plain PD tracking for a double integrator:
 
-    def compute_control(self, x, v, goal):
-        rel_goal = goal - x
-        dist_goal = np.linalg.norm(rel_goal)
+        u = k_p (goal - x) - k_d v
 
-        # Goal tracking (PD + Far-field push)
-        if dist_goal > self.pd_switch_dist:
-            u_goal = (rel_goal / (dist_goal + 1e-9)) * self.a_max - self.v_damp_far * v
-        else:
-            u_goal = self.pd_kp * rel_goal - self.pd_kd * v
+    Exposes components so higher-level policies can fade only the P term
+    (useful when you add actuator lag / drag and still want convergence).
+    """
 
-        return u_goal
+    def __init__(self, cfg, a_max: float):
+        self.kp = float(cfg.get("controller.nominal.pd.kp", 5.0))
+        self.kd = float(cfg.get("controller.nominal.pd.kd", 3.0))
+        self.a_max = float(a_max)
+
+    def compute_components(self, x, v, goal, is_2d: bool):
+        x = as3(x)
+        v = as3(v)
+        goal = as3(goal)
+
+        e = goal - x
+        u_p = self.kp * e
+        u_d = -self.kd * v
+        u = u_p + u_d
+
+        # Saturate total command (not each component separately)
+        n = float(np.linalg.norm(u))
+        if n > self.a_max:
+            u = (u / (n + 1e-12)) * self.a_max
+
+        if is_2d:
+            u_p[2] = 0.0
+            u_d[2] = 0.0
+            u[2] = 0.0
+
+        return u_p, u_d, u
+
+    def compute(self, x, v, goal, is_2d: bool) -> np.ndarray:
+        _, _, u = self.compute_components(x, v, goal, is_2d=is_2d)
+        return u

@@ -5,7 +5,29 @@ sim:
   substeps:
     live: 2
     record: 1
+  
+  # More realistic agent dynamics (still cheap and readable)
+  dynamics:
+    # First-order actuator lag on acceleration command:
+    #   a_applied_dot = (a_cmd - a_applied) / tau
+    accel_time_constant: 0.08   # seconds (0.0 disables lag)
+
+    # Linear drag on velocity:
+    #   v_dot += -drag * v
+    linear_drag: 0.15           # 1/s (0.0 disables drag)
+
+    # Speed limit (models actuator/safety constraints)
+    v_max_2d: 3.0               # m/s
+    v_max_3d: 4.0               # m/s
+
+    # Optional process noise on applied acceleration (stochasticity)
+    accel_noise_std: 0.0        # m/s^2 (0.0 disables)
+
+    # Gravity magnitude (m/s^2). Applied along -z in 3D.
+    gravity_2d: 0.0
+    gravity_3d: 9.8
+
   termination:
     goal_delta: 0.25
-    settle_seconds: 1.0
+    settle_seconds: 0.5
     max_frames: 2000
