@@ -59,7 +59,6 @@ def main():
     parser.add_argument("--config", type=str, default="config/default.yaml")
 
     parser.add_argument("--dim", type=str, choices=["2d", "3d"], default=None)
-    parser.add_argument("--mode", type=str, choices=["still", "live"], default=None)
     parser.add_argument("--dynamic", action="store_true")
     parser.add_argument("--record", action="store_true")
     parser.add_argument("--num_obs", type=int, default=None)
@@ -85,8 +84,6 @@ def main():
     # CLI direct overrides
     if args.dim is not None:
         cfg["viz"]["dim"] = args.dim
-    if args.mode is not None:
-        cfg["viz"]["mode"] = args.mode
     if args.safety_plot is not None:
         cfg["viz"]["safety_plot"] = bool(args.safety_plot)
     if args.num_agents is not None:
@@ -112,8 +109,9 @@ def main():
     headless = (os.environ.get("DISPLAY", "") == "") and (os.name != "nt")
     if headless:
         chosen_backend = "Agg"
-        if cfg["viz"]["mode"] == "live":
-            cfg["viz"]["mode"] = "still"
+        # Always live/record now
+        # if cfg["viz"]["mode"] == "live":
+        #    cfg["viz"]["mode"] = "still"
         cfg["viz"]["record"] = True
 
     os.environ["MPLBACKEND"] = chosen_backend
@@ -132,7 +130,7 @@ def main():
     ctrl = SwarmController(cfg, a_max=a_max)
 
     print(
-        f"[run] dim={cfg['viz']['dim']} mode={cfg['viz']['mode']} "
+        f"[run] dim={cfg['viz']['dim']} "
         f"record={cfg['viz']['record']} agents={cfg['agents']['num_agents']} backend={cfg['viz']['backend']}"
     )
 

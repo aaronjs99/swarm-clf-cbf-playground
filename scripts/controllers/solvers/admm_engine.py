@@ -1,5 +1,5 @@
 import numpy as np
-from controllers.base_qp import solve_qp_safe
+from .base_qp import solve_qp_safe
 
 
 class ADMMSolver:

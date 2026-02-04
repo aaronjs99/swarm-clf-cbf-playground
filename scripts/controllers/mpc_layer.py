@@ -1,13 +1,7 @@
 import numpy as np
 
 
-def _as3(x):
-    x = np.asarray(x, dtype=float).reshape(-1)
-    if x.size == 2:
-        return np.array([x[0], x[1], 0.0], dtype=float)
-    if x.size == 3:
-        return x
-    raise ValueError("Expected a 2D or 3D vector.")
+from utils.geometry import as3
 
 
 class SamplingMPCPlanner:
@@ -82,9 +76,9 @@ class SamplingMPCPlanner:
         if not self.enabled:
             return None
 
-        x0 = _as3(x)
-        v0 = _as3(v)
-        goal = _as3(goal)
+        x0 = as3(x)
+        v0 = as3(v)
+        goal = as3(goal)
 
         # 1) Threat Filtering: Keep only nearest K or proximity-gated
         # This reduces the inner loop cost significantly.

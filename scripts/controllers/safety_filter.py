@@ -1,13 +1,8 @@
 import numpy as np
+from controllers.constraints import LinearConstraint
 
 
-def _as3(x):
-    x = np.asarray(x, dtype=float).reshape(-1)
-    if x.size == 2:
-        return np.array([x[0], x[1], 0.0], dtype=float)
-    if x.size == 3:
-        return x
-    raise ValueError("Expected a 2D or 3D vector.")
+from utils.geometry import as3
 
 
 class BrakingSafetyFilter:
@@ -43,10 +38,10 @@ class BrakingSafetyFilter:
     def compute_braking_h(
         self, x, v, other_pos, other_vel, d_safe: float, a_max: float
     ):
-        x = _as3(x)
-        v = _as3(v)
-        other_pos = _as3(other_pos)
-        other_vel = _as3(other_vel)
+        x = as3(x)
+        v = as3(v)
+        other_pos = as3(other_pos)
+        other_vel = as3(other_vel)
 
         r = x - other_pos
         dist = float(np.linalg.norm(r)) + 1e-9
@@ -62,10 +57,8 @@ class BrakingSafetyFilter:
         h_brake = dist_to_safe - brake_term - self.margin
         return float(h_brake), e, float(v_close), float(dist_to_safe)
 
-    def maybe_add_constraint(
+    def get_constraint(
         self,
-        G_list,
-        b_list,
         x,
         v,
         other_pos,
@@ -74,8 +67,8 @@ class BrakingSafetyFilter:
         a_max: float,
     ):
         """
-        Mutates G_list, b_list in-place.
-        Returns a dict with debug info.
+        Returns a LinearConstraint if active, else None.
+        Returns (constraint, info_dict).
         """
         info = {
             "active": False,
@@ -85,7 +78,7 @@ class BrakingSafetyFilter:
         }
 
         if not self.enabled:
-            return info
+            return None, info
 
         h_brake, e, v_close, dist_to_safe = self.compute_braking_h(
             x, v, other_pos, other_vel, d_safe, a_max
@@ -98,8 +91,13 @@ class BrakingSafetyFilter:
         if (v_close > 1e-6) and (h_brake < self.activate_h):
             # e^T u >= gain * v_close
             # (-e)^T u <= -gain * v_close
-            G_list.append((-e).tolist())
-            b_list.append(float(-self.gain * v_close))
-            info["active"] = True
 
-        return info
+            c = LinearConstraint(
+                G=np.atleast_2d(-e),
+                b=np.atleast_1d(-self.gain * v_close),
+                hard=False,  # Braking filter often treated as soft or high-priority soft
+            )
+            info["active"] = True
+            return c, info
+
+        return None, info

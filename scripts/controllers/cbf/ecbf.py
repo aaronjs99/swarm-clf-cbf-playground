@@ -1,13 +1,8 @@
 import numpy as np
+from controllers.constraints import LinearConstraint
 
 
-def _as3(x):
-    x = np.asarray(x, dtype=float).reshape(-1)
-    if x.size == 2:
-        return np.array([x[0], x[1], 0.0], dtype=float)
-    if x.size == 3:
-        return x
-    raise ValueError("Expected a 2D or 3D vector.")
+from utils.geometry import as3
 
 
 class ECBFRelativeDegree2:
@@ -43,10 +38,10 @@ class ECBFRelativeDegree2:
           h_dot  = 2 r^T v_rel
           h_ddot = 2 v_rel^T v_rel + 2 r^T u
         """
-        x = _as3(x)
-        v = _as3(v)
-        other_pos = _as3(other_pos)
-        other_vel = _as3(other_vel)
+        x = as3(x)
+        v = as3(v)
+        other_pos = as3(other_pos)
+        other_vel = as3(other_vel)
 
         r = x - other_pos
         v_rel = v - other_vel
@@ -61,7 +56,9 @@ class ECBFRelativeDegree2:
         G_row = -2.0 * r
         b_val = h_ddot_no_u + self.k1 * h_dot + self.k0 * h
 
-        return G_row, float(b_val), {"h": h, "h_dot": h_dot}
+        return LinearConstraint(
+            G=np.atleast_2d(G_row), b=np.atleast_1d(b_val), hard=False
+        ), {"h": h, "h_dot": h_dot}
 
     def constraint_halfspace_wall(
         self,
@@ -79,10 +76,10 @@ class ECBFRelativeDegree2:
           h_dot  = n^T v
           h_ddot = n^T u
         """
-        x = _as3(x)
-        v = _as3(v)
-        n = _as3(wall_normal)
-        p = _as3(wall_point)
+        x = as3(x)
+        v = as3(v)
+        n = as3(wall_normal)
+        p = as3(wall_point)
 
         h = float(np.dot(n, x - p) - offset)
         h_dot = float(np.dot(n, v))
@@ -92,4 +89,6 @@ class ECBFRelativeDegree2:
         G_row = -n
         b_val = self.k1 * h_dot + self.k0 * h
 
-        return G_row, float(b_val), {"h": h, "h_dot": h_dot}
+        return LinearConstraint(
+            G=np.atleast_2d(G_row), b=np.atleast_1d(b_val), hard=False
+        ), {"h": h, "h_dot": h_dot}

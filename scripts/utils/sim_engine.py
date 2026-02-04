@@ -1,4 +1,3 @@
-# ===== ./scripts/utils/sim_engine.py =====
 import os
 from itertools import count
 
@@ -8,6 +7,10 @@ from matplotlib.animation import FuncAnimation, FFMpegWriter
 
 
 class SafetyLogger:
+    """
+    Logs safety metrics (CBF values), connectivity, and solver slack for post-simulation analysis.
+    """
+
     def __init__(self, num_agents):
         self.h_buf_history = [[] for _ in range(num_agents)]
         self.h_phys_history = [[] for _ in range(num_agents)]
@@ -77,384 +80,23 @@ class SafetyLogger:
         plt.show(block=True)
 
 
-def _sphere_mass(r: float, dim: int) -> float:
-    # Proportional to area (2D) or volume (3D). Constants cancel in impulse math.
-    if dim == 2:
-        return max(1e-9, r * r)
-    return max(1e-9, r * r * r)
-
-
-def _resolve_sphere_sphere_collisions(obs, dim: int, restitution: float = 1.0):
-    # Only sphere-sphere collisions (ignore walls)
-    spheres = [o for o in obs if o.get("kind") == "sphere"]
-    n = len(spheres)
-    if n <= 1:
-        return
-
-    e = float(restitution)
-
-    for i in range(n):
-        a = spheres[i]
-        for j in range(i + 1, n):
-            b = spheres[j]
-
-            pa = a["pos"]
-            pb = b["pos"]
-            ra = float(a["r"])
-            rb = float(b["r"])
-
-            delta = pb - pa
-            dist = float(np.linalg.norm(delta))
-            min_dist = ra + rb
-
-            if dist <= 1e-12:
-                n_hat = np.array([1.0, 0.0, 0.0])
-                dist = 1e-12
-            else:
-                n_hat = delta / dist
-
-            if dist >= min_dist:
-                continue
-
-            va = a["vel"]
-            vb = b["vel"]
-
-            penetration = min_dist - dist
-
-            ma = _sphere_mass(ra, dim)
-            mb = _sphere_mass(rb, dim)
-            inv_ma = 1.0 / ma
-            inv_mb = 1.0 / mb
-            inv_sum = inv_ma + inv_mb
-
-            pa -= n_hat * penetration * (inv_ma / inv_sum)
-            pb += n_hat * penetration * (inv_mb / inv_sum)
-
-            v_rel = vb - va
-            v_rel_n = float(np.dot(v_rel, n_hat))
-
-            if v_rel_n >= 0.0:
-                continue
-
-            j_imp = -(1.0 + e) * v_rel_n / inv_sum
-            impulse = j_imp * n_hat
-            va -= impulse * inv_ma
-            vb += impulse * inv_mb
-
-            a["pos"] = pa
-            b["pos"] = pb
-            a["vel"] = va
-            b["vel"] = vb
-
-
-def _bounce_sphere_off_walls_inplace(o, w_cfg, dim: int):
-    # Sphere obstacle bounce against axis-aligned walls.
-    # Uses the obstacle's radius.
-    r = float(o["r"])
-
-    # X
-    if o["pos"][0] - r < w_cfg["x_min"]:
-        o["vel"][0] *= -1
-        o["pos"][0] = w_cfg["x_min"] + r
-    elif o["pos"][0] + r > w_cfg["x_max"]:
-        o["vel"][0] *= -1
-        o["pos"][0] = w_cfg["x_max"] - r
-
-    # Y
-    if o["pos"][1] - r < w_cfg["y_min"]:
-        o["vel"][1] *= -1
-        o["pos"][1] = w_cfg["y_min"] + r
-    elif o["pos"][1] + r > w_cfg["y_max"]:
-        o["vel"][1] *= -1
-        o["pos"][1] = w_cfg["y_max"] - r
-
-    # Z (3D only)
-    if dim == 3:
-        if o["pos"][2] - r < w_cfg["z_min"]:
-            o["vel"][2] *= -1
-            o["pos"][2] = w_cfg["z_min"] + r
-        elif o["pos"][2] + r > w_cfg["z_max"]:
-            o["vel"][2] *= -1
-            o["pos"][2] = w_cfg["z_max"] - r
-
-
-def _agents_enforce_world_bounds(
-    agents,
-    w_cfg,
-    dim: int,
-    agent_radius: float,
-    restitution: float = 0.0,
-):
-    """
-    Hard simulator-side world constraint for agents.
-
-    Why: CBFs are continuous-time; our sim is discrete-time with optional slack.
-    So an agent can step across a wall between controller updates. This prevents
-    "teleporting" by enforcing that positions remain inside the wall box.
-
-    Behavior:
-      - clamp position to [min+R, max-R]
-      - optionally bounce velocity component with restitution in [0, 1]
-        * 0.0 => "stick" (zero out that velocity component on impact)
-        * 1.0 => perfectly elastic reflection
-    """
-    if not (isinstance(w_cfg, dict) and w_cfg.get("enabled", False)):
-        return
-
-    e = float(restitution)
-    e = max(0.0, min(1.0, e))
-    R = float(agent_radius)
-
-    x_min = float(w_cfg["x_min"]) + R
-    x_max = float(w_cfg["x_max"]) - R
-    y_min = float(w_cfg["y_min"]) + R
-    y_max = float(w_cfg["y_max"]) - R
-
-    if dim == 3:
-        z_min = float(w_cfg["z_min"]) + R
-        z_max = float(w_cfg["z_max"]) - R
-    else:
-        z_min = 0.0
-        z_max = 0.0
-
-    for a in agents:
-        p = a["pos"]
-        v = a["vel"]
-
-        # X
-        if p[0] < x_min:
-            p[0] = x_min
-            v[0] = -e * v[0]
-        elif p[0] > x_max:
-            p[0] = x_max
-            v[0] = -e * v[0]
-
-        # Y
-        if p[1] < y_min:
-            p[1] = y_min
-            v[1] = -e * v[1]
-        elif p[1] > y_max:
-            p[1] = y_max
-            v[1] = -e * v[1]
-
-        # Z
-        if dim == 3:
-            if p[2] < z_min:
-                p[2] = z_min
-                v[2] = -e * v[2]
-            elif p[2] > z_max:
-                p[2] = z_max
-                v[2] = -e * v[2]
-        else:
-            p[2] = 0.0
-            v[2] = 0.0
-
-        a["pos"] = p
-        a["vel"] = v
-
-
-def _coerce_int_or_none(x):
-    if x is None:
-        return None
-    if isinstance(x, (int, np.integer)):
-        return int(x)
-    if isinstance(x, float):
-        return int(x)
-    if isinstance(x, str) and x.strip() == "":
-        return None
-    return int(x)
-
-
-def get_obstacles(cfg, agents_init, goals_init, dim):
-    obs_cfg = cfg["world"]["obstacles"]
-    np.random.seed(int(cfg.get("seed", 42)))
-    obs = []
-
-    w_key = "walls_2d" if dim == 2 else "walls_3d"
-    if obs_cfg.get(w_key, {}).get("enabled", False):
-        w = obs_cfg[w_key]
-        obs.append(
-            {
-                "kind": "wall",
-                "pos": np.array([0, w["y_min"], 0]),
-                "normal": np.array([0, 1.0, 0]),
-                "vel": np.zeros(3),
-            }
-        )
-        obs.append(
-            {
-                "kind": "wall",
-                "pos": np.array([0, w["y_max"], 0]),
-                "normal": np.array([0, -1.0, 0]),
-                "vel": np.zeros(3),
-            }
-        )
-        obs.append(
-            {
-                "kind": "wall",
-                "pos": np.array([w["x_min"], 0, 0]),
-                "normal": np.array([1.0, 0, 0]),
-                "vel": np.zeros(3),
-            }
-        )
-        obs.append(
-            {
-                "kind": "wall",
-                "pos": np.array([w["x_max"], 0, 0]),
-                "normal": np.array([-1.0, 0, 0]),
-                "vel": np.zeros(3),
-            }
-        )
-
-        if dim == 3:
-            obs.append(
-                {
-                    "kind": "wall",
-                    "pos": np.array([0, 0, w["z_min"]]),
-                    "normal": np.array([0, 0, 1.0]),
-                    "vel": np.zeros(3),
-                }
-            )
-            obs.append(
-                {
-                    "kind": "wall",
-                    "pos": np.array([0, 0, w["z_max"]]),
-                    "normal": np.array([0, 0, -1.0]),
-                    "vel": np.zeros(3),
-                }
-            )
-
-        margin = 1.2
-        box_min = np.array(
-            [w["x_min"] + margin, w["y_min"] + margin, w.get("z_min", 0) + margin]
-        )
-        box_max = np.array(
-            [w["x_max"] - margin, w["y_max"] - margin, w.get("z_max", 10) - margin]
-        )
-    else:
-        box_min = np.array(obs_cfg["spawn_box_3d"]["min"])
-        box_max = np.array(obs_cfg["spawn_box_3d"]["max"])
-
-    num = int(
-        obs_cfg.get("num_override")
-        or (obs_cfg["num_obs_2d"] if dim == 2 else obs_cfg["num_obs_3d"])
-    )
-    r_lo, r_hi = obs_cfg["radius_range"]
-    v_lo, v_hi = obs_cfg["dynamic"]["vel_range"]
-
-    while len(obs) < num:
-        pos = np.random.uniform(box_min, box_max)
-        if dim == 2:
-            pos[2] = 0.0
-        r = float(np.random.uniform(r_lo, r_hi))
-        if any(np.linalg.norm(pos - p) < (r + 0.8) for p in agents_init + goals_init):
-            continue
-
-        vel = np.random.uniform(v_lo, v_hi, 3)
-        if dim == 2:
-            vel[2] = 0.0
-        obs.append({"pos": pos, "r": r, "vel": vel, "kind": "sphere"})
-
-    return obs
-
-
-def _init_agents_and_goals(cfg, dim, n):
-    np.random.seed(int(cfg.get("seed", 42)))
-    w_key = "walls_2d" if dim == 2 else "walls_3d"
-    w = cfg["world"]["obstacles"].get(w_key, {})
-
-    y_mid = (w["y_max"] + w["y_min"]) / 2.0 if w.get("enabled") else 0.0
-    z_mid = (w["z_max"] + w["z_min"]) / 2.0 if (dim == 3 and w.get("enabled")) else 0.0
-
-    y_spacing = cfg["agents"]["init"]["lanes"]["y_spacing"]
-    y_start = y_mid - ((n - 1) * y_spacing) / 2.0
-
-    if dim == 2:
-        init_cfg = cfg["agents"]["init"]
-        goal_cfg = cfg["agents"]["goals"]
-        walls_cfg = cfg["world"]["obstacles"].get("walls_2d", {})
-
-        if walls_cfg.get("enabled", False):
-            y_mid = (walls_cfg["y_max"] + walls_cfg["y_min"]) / 2.0
-            y_start = y_mid - ((n - 1) * init_cfg["lanes"]["y_spacing"]) / 2.0
-        else:
-            y_start = 0.0
-
-        if init_cfg["mode_2d"] == "circle":
-            center = np.array(init_cfg["circle"]["center"], dtype=float)
-            radius = float(init_cfg["circle"]["radius"])
-            agents_init = [
-                center
-                + np.array(
-                    [
-                        radius * np.cos((2 * np.pi / n) * i),
-                        radius * np.sin((2 * np.pi / n) * i),
-                        0.0,
-                    ]
-                )
-                for i in range(n)
-            ]
-        else:
-            lanes = init_cfg["lanes"]
-            y_spacing = float(lanes["y_spacing"])
-            agents_init = [
-                np.array(
-                    [
-                        np.random.uniform(lanes["x_min"], lanes["x_max"]),
-                        y_start + i * y_spacing,
-                        0.0,
-                    ]
-                )
-                for i in range(n)
-            ]
-
-        if goal_cfg["mode_2d"] == "mirror":
-            center = np.array(init_cfg["circle"]["center"], dtype=float)
-            goals_init = [
-                np.array(
-                    [
-                        center[0] - (p[0] - center[0]),
-                        center[1] - (p[1] - center[1]),
-                        0.0,
-                    ]
-                )
-                for p in agents_init
-            ]
-        else:
-            lanes = goal_cfg["lanes"]
-            y_spacing = float(lanes["y_spacing"])
-            reverse = bool(lanes.get("reverse_order", True))
-            y_start_goal = y_mid - ((n - 1) * y_spacing) / 2.0
-
-            ys = (
-                [(n - 1 - i) * y_spacing + y_start_goal for i in range(n)]
-                if reverse
-                else [i * y_spacing + y_start_goal for i in range(n)]
-            )
-            goals_init = [
-                np.array(
-                    [np.random.uniform(lanes["x_min"], lanes["x_max"]), ys[i], 0.0]
-                )
-                for i in range(n)
-            ]
-    else:
-        agents_init = [
-            np.array([w["x_min"] + 1.0, y_start + i * y_spacing, z_mid])
-            for i in range(n)
-        ]
-        goals_init = [
-            np.array([w["x_max"] - 1.0, y_start + (n - 1 - i) * y_spacing, z_mid])
-            for i in range(n)
-        ]
-
-    return agents_init, goals_init
+from world.physics import (
+    resolve_sphere_sphere_collisions,
+    bounce_sphere_off_walls_inplace,
+    agents_enforce_world_bounds,
+)
+from world.environment import get_obstacles, init_agents_and_goals
 
 
 def run_simulation(cfg, ctrl):
+    """
+    Main entry point for running the simulation.
+    Initializes environment and starts the execution loop.
+    """
     dim = 2 if cfg["viz"]["dim"] == "2d" else 3
     n = int(cfg["agents"]["num_agents"])
 
-    agents_init, goals_init = _init_agents_and_goals(cfg, dim, n)
+    agents_init, goals_init = init_agents_and_goals(cfg, dim, n)
     obs = get_obstacles(cfg, agents_init, goals_init, dim)
 
     _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim)
@@ -467,7 +109,7 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
 
     dt = float(sim_cfg["dt"])
     record = bool(cfg["viz"]["record"])
-    mode = str(cfg["viz"]["mode"])
+    # mode = str(cfg["viz"]["mode"]) # Removed
 
     sub_steps = int(
         sim_cfg["substeps"]["record"] if record else sim_cfg["substeps"]["live"]
@@ -610,12 +252,12 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
                 if o.get("kind") == "sphere":
                     o["pos"] += o["vel"] * dt
                     if w_cfg.get("enabled", False):
-                        _bounce_sphere_off_walls_inplace(o, w_cfg, dim)
+                        bounce_sphere_off_walls_inplace(o, w_cfg, dim)
                 else:
                     o["pos"] += o["vel"] * dt
 
             # 1b) Sphere-sphere collisions
-            _resolve_sphere_sphere_collisions(obs, dim=dim, restitution=rest_obs)
+            resolve_sphere_sphere_collisions(obs, dim=dim, restitution=rest_obs)
 
             # 2) Agent control + integrate
             curr_states = [{"pos": a["pos"], "vel": a["vel"]} for a in agents]
@@ -638,7 +280,7 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
                 swarm_pos_accum += a["pos"]
 
             # 2b) HARD world bounds for agents (prevents discrete-time wall tunneling)
-            _agents_enforce_world_bounds(
+            agents_enforce_world_bounds(
                 agents=agents,
                 w_cfg=w_cfg,
                 dim=dim,
@@ -749,10 +391,7 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
 
     interval_ms = int(sim_cfg["interval_ms"])
 
-    if mode == "still":
-        update(0)
-        plt.show(block=True)
-    else:
+    if True:  # Always animate
         ani = FuncAnimation(
             fig,
             update,
@@ -773,7 +412,7 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
             ani.save(
                 f"media/swarm_{dim}d.mp4",
                 writer=FFMpegWriter(fps=30),
-                savefig_kwargs={"dpi": 150},
+                dpi=150,
             )
         else:
             plt.show(block=True)
