@@ -1,0 +1,10 @@
+include:
+  - ../base.yaml
+  - ../sim/default.yaml
+  - ../viz/live.yaml
+  - ../world/3d_box.yaml
+  - ../controller/nominal.yaml
+  - ../controller/cbf.yaml
+  - ../controller/mpc.yaml
+  - ../controller/connectivity.yaml
+  - ../controller/solver.yaml

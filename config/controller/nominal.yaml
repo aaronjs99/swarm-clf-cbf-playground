@@ -1,0 +1,20 @@
+controller:
+  dim_defaults:
+    a_max_2d: 30.0
+    a_max_3d: 40.0
+
+  nominal:
+    enabled: true
+    v_damp_far: 2.0
+    
+    pd:
+      switch_dist: 0.1
+      kp: 5.0
+      kd: 3.0
+
+    repulsion:
+      enabled: true
+      range_extra: 2.5
+      gain_2d: 12.0
+      gain_3d: 10.0
+      tangent_bias: true

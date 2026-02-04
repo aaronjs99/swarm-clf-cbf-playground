@@ -1,0 +1,11 @@
+sim:
+  seed: 42
+  dt: 0.02
+  interval_ms: 50
+  substeps:
+    live: 2
+    record: 1
+  termination:
+    goal_delta: 0.25
+    settle_seconds: 1.0
+    max_frames: 2000

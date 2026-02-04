@@ -36,147 +36,76 @@ The result: goal-seeking behavior with provable-style safety constraints, in a s
 
 ## Quickstart
 
-### 1) Create an environment (recommended)
+### 1. Installation
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
+pip install -r requirements.txt  # Or just pip install numpy matplotlib pyyaml cvxopt
 ```
 
-### 2) Install dependencies
+### 2. Run Simulations
 
-Option A: install from `setup.py` (editable install for development)
-
+**Default 2D Scenario (Lanes Swap):**
 ```bash
-pip install -e .
+python run.py --config config/experiment/default.yaml
 ```
 
-Option B: install dependencies directly
-
+**3D Scenario (Box):**
 ```bash
-pip install numpy matplotlib cvxopt pyyaml
+python run.py --config config/experiment/3d_default.yaml --dim 3d --num_agents 4
 ```
 
-### 3) Run a simulation
-
-**3D swarm with dynamic obstacles:**
-
+**Override Configs on CLI:**
 ```bash
-python run.py --dim 3d --mode live --dynamic --num_agents 5
-```
-
-**2D swarm with defaults:**
-
-```bash
-python run.py --dim 2d --mode live --num_agents 5
-```
-
-**Record a video to `media/`:**
-
-```bash
-python run.py --dim 3d --mode live --dynamic --num_agents 5 --record
-```
-
-Disable safety plot if you only want the animation:
-
-```bash
-python run.py --dim 3d --mode live --num_agents 5 --safety_plot false
+python run.py \
+  --config config/experiment/default.yaml \
+  --set \
+    sim.termination.max_frames=500 \
+    controller.cbf.buffer_obstacles=0.2
 ```
 
 ---
 
-## CLI options
+## Modular Configuration
 
-`run.py` exposes a single unified runner:
+The configuration is no longer a monolithic file. It uses a **profile-based** include system.
+See `config/` directory:
 
-- `--dim {2d,3d}`: simulation dimension (default: `3d`)
-- `--mode {still,live}`: visualization mode (default: `live`)
-- `--dynamic`: enables obstacle motion
-- `--record`: saves an MP4 in `media/` (requires ffmpeg)
-- `--num_obs N`: number of obstacles (default: `3` in 2D, `8` in 3D)
-- `--num_agents N`: number of agents (default: `1`)
-- `--safety_plot {true,false}`: plot barrier histories at end (default: `true`)
+- `base.yaml`: Common defaults.
+- `sim/`: Physics and time steps.
+- `viz/`: Visualization settings (live vs record).
+- `world/`: Scenario definitions (2d lanes, 3d box).
+- `controller/`: Component settings (nominal, cbf, mpc, solver).
+- `experiment/`: Entry point configs that composed the above.
 
----
-
-## How it works (high-level)
-
-At each timestep, for each agent:
-
-1. Compute a **nominal acceleration** toward the goal (plus a repulsion term near threats).
-2. Solve a **QP** that stays close to the nominal control while satisfying:
-   - a **CLF constraint** for goal convergence
-   - **CBF constraints** for obstacle and inter-agent safety
-   - acceleration bounds, plus a hard 2D plane constraint when in 2D
-
-Key files:
-
-- `scripts/controllers/dynamics.py`  
-  The CLF-CBF + QP controller (`SwarmController.compute_control`).
-- `scripts/controllers/base_qp.py`  
-  Robust QP wrapper (`solve_qp_safe`) using `cvxopt`.
-- `scripts/utils/sim_engine.py`  
-  Simulation loop, rendering, logging, and recording.
-
----
-
-## Project layout
-
-```text
-.
-├── run.py
-├── setup.py
-├── scripts/
-│   ├── controllers/
-│   │   ├── base_qp.py
-│   │   └── dynamics.py
-│   └── utils/
-│       ├── geometry.py
-│       ├── sim_engine.py
-│       └── visualization.py
-├── media/
-├── figures/
-└── LICENSE
+Example `experiment/default.yaml`:
+```yaml
+include:
+  - ../base.yaml
+  - ../sim/default.yaml
+  - ../viz/live.yaml
+  - ../world/2d_lanes.yaml
+  - ../controller/nominal.yaml
+  ...
 ```
 
 ---
 
-## Troubleshooting
+## Modular Architecture
 
-### Recording fails or produces empty video
+Refactored to support plug-and-play components:
 
-Recording uses Matplotlib’s FFMpeg writer. Install ffmpeg:
-
-- Ubuntu/Debian:
-  ```bash
-  sudo apt-get update
-  sudo apt-get install ffmpeg
-  ```
-
-Then rerun with `--record`.
-
-### QP occasionally returns `None`
-
-`cvxopt` can fail on ill-conditioned constraints or impossible situations. The controller includes a fallback:
-- If the solver fails, it applies a max-acceleration “get away from the nearest threat” behavior.
-
-If you see frequent failures, reduce gains or reduce obstacle density:
-- Try fewer obstacles (`--num_obs`)
-- Lower controller aggressiveness (tune `k1`, `k2`, `a_max`, `p_slack` in `SwarmController`)
-
----
-
-## Development ideas (easy wins)
-
-- Add alternative dynamics models (double integrator vs quadrotor-like constraints).
-- Add formation objectives (consensus, cohesion, separation weights).
-- Add goal reassignment and task allocation.
-- Log QP feasibility rates and constraint margins per timestep.
-- Replace `cvxopt` with `osqp` or `qpOASES` for speed.
+- **Logic**: `scripts/controllers/policies/` (Nominal, Connectivity)
+- **Constraints**: `scripts/controllers/constraints/` (Builder, Manager)
+- **Solvers**: `scripts/controllers/solvers/` (QP, ADMM wrapper)
+- **Simulation**: `scripts/utils/`
+  - `stepper.py`: Pure physics stepping (no viz).
+  - `animator.py`: Matplotlib visualization.
+  - `logger.py`: Safety metric logging.
+  - `sim_engine.py`: Orchestrator.
 
 ---
 
 ## License
-
 See `LICENSE`.

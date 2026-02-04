@@ -1,0 +1,31 @@
+viz:
+  dim: "3d"
+
+agents:
+  num_agents: 4
+  init:
+    mode: "box"
+  goals:
+    mode: "box"
+
+world:
+  obstacles:
+    dynamic:
+      enabled: true
+      vel_range: [-1.0, 1.0]
+    
+    radius_range: [0.2, 0.5]
+    num: 12
+
+    walls:
+      enabled: true
+      x_min: -5.0
+      x_max: 5.0
+      y_min: -5.0
+      y_max: 5.0
+      z_min: 0.0
+      z_max: 10.0
+
+    spawn_box:
+      min: [ 0.5,  0.5,  0.5]
+      max: [ 4.5,  4.5,  4.5]

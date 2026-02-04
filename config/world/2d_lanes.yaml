@@ -1,0 +1,38 @@
+viz:
+  dim: "2d"
+
+agents:
+  num_agents: 4
+  init:
+    mode: "lanes"
+    lanes:
+      x_min: -4.0
+      x_max: -2.0
+      y_spacing: 0.8
+  goals:
+    mode: "lanes"
+    lanes:
+      x_min: 2.0
+      x_max: 4.0
+      y_spacing: 0.8
+      reverse_order: true
+
+world:
+  obstacles:
+    dynamic:
+      enabled: true
+      vel_range: [-1.0, 1.0]
+    
+    radius_range: [0.2, 0.5]
+    num: 8
+
+    walls:
+      enabled: true
+      x_min: -5.0
+      x_max: 5.0
+      y_min: -5.0
+      y_max: 5.0
+
+    spawn_box:
+      min: [-4.0, -4.0, 0.0]
+      max: [ 4.0,  4.0, 0.0]

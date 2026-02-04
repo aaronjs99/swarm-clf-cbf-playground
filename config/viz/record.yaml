@@ -1,0 +1,6 @@
+viz:
+  backend: "Agg"
+  dim: "2d" # Default
+  mode: "still"
+  record: true
+  safety_plot: false

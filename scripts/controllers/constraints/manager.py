@@ -9,8 +9,9 @@ class ConstraintManager:
     and provides them in a unified format for the Optimization Solver.
     """
 
-    def __init__(self):
+    def __init__(self, u_dim: int = 3):
         self.constraints: List[LinearConstraint] = []
+        self.u_dim = u_dim
 
     def add_constraint(self, constraint: LinearConstraint):
         """
@@ -42,11 +43,9 @@ class ConstraintManager:
                 G_soft_list.append(g_mat)
                 b_soft_list.append(b_vec)
 
-        G_soft = (
-            np.vstack(G_soft_list) if G_soft_list else np.empty((0, 3))
-        )  # Assuming dim 3 u
+        G_soft = np.vstack(G_soft_list) if G_soft_list else np.empty((0, self.u_dim))
         b_soft = np.concatenate(b_soft_list) if b_soft_list else np.empty((0,))
-        G_hard = np.vstack(G_hard_list) if G_hard_list else np.empty((0, 3))
+        G_hard = np.vstack(G_hard_list) if G_hard_list else np.empty((0, self.u_dim))
         b_hard = np.concatenate(b_hard_list) if b_hard_list else np.empty((0,))
 
         return G_soft, b_soft, G_hard, b_hard

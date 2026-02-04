@@ -1,0 +1,7 @@
+controller:
+  connectivity:
+    enabled: true
+    k_neighbors: 3
+    gain: 5.0
+    l2_threshold: 0.5
+    inject_into_nominal: false

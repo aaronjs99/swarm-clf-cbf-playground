@@ -17,9 +17,29 @@ def deep_update(dst: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
 def load_config(path: str) -> Dict[str, Any]:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Config not found: {path}")
+
+    # Load the main file
     with open(path, "r") as f:
         cfg = yaml.safe_load(f) or {}
-    return cfg
+
+    # Check for includes
+    includes = cfg.pop("include", [])
+    if not isinstance(includes, list):
+        includes = [includes]
+
+    # Resolve base dir for relative includes
+    base_dir = os.path.dirname(path)
+
+    # Load and merge includes in order
+    merged_cfg = {}
+    for inc in includes:
+        inc_path = inc if os.path.isabs(inc) else os.path.join(base_dir, inc)
+        inc_cfg = load_config(inc_path)  # Recursive load
+        deep_update(merged_cfg, inc_cfg)
+
+    # Finally update with the main file's content
+    deep_update(merged_cfg, cfg)
+    return merged_cfg
 
 
 def set_by_dotted_key(cfg: Dict[str, Any], dotted: str, value: Any) -> None:

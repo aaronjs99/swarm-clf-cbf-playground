@@ -6,6 +6,9 @@ import sys
 # Choose backend BEFORE importing matplotlib anywhere.
 # If you're headless (no DISPLAY), force Agg and fall back to record mode.
 def _pick_backend(cli_backend, cfg_backend):
+    """
+    Selects the matplotlib backend based on CLI args, config, or defaults.
+    """
     # If user explicitly set a backend, honor it.
     if cli_backend:
         return cli_backend
@@ -25,12 +28,18 @@ from utils.config import load_config, set_by_dotted_key
 
 
 def str2bool(v):
+    """
+    Converts a string representation of truth to boolean.
+    """
     if isinstance(v, bool):
         return v
     return v.lower() in ("yes", "true", "t", "y", "1")
 
 
 def parse_kv(pairs):
+    """
+    Parses a list of 'key=value' strings into a dictionary.
+    """
     out = {}
     for p in pairs or []:
         if "=" not in p:
@@ -41,6 +50,9 @@ def parse_kv(pairs):
 
 
 def coerce_scalar(s):
+    """
+    Attempts to convert a string to int, float, or bool. Returns string if failed.
+    """
     sl = str(s).lower()
     if sl in ("true", "false"):
         return sl == "true"
@@ -56,7 +68,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Swarm CLF-CBF Runner with YAML config"
     )
-    parser.add_argument("--config", type=str, default="config/default.yaml")
+    parser.add_argument("--config", type=str, default="config/experiment/default.yaml")
 
     parser.add_argument("--dim", type=str, choices=["2d", "3d"], default=None)
     parser.add_argument("--dynamic", action="store_true")
@@ -110,8 +122,6 @@ def main():
     if headless:
         chosen_backend = "Agg"
         # Always live/record now
-        # if cfg["viz"]["mode"] == "live":
-        #    cfg["viz"]["mode"] = "still"
         cfg["viz"]["record"] = True
 
     os.environ["MPLBACKEND"] = chosen_backend

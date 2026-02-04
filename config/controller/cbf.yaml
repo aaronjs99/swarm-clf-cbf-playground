@@ -1,0 +1,14 @@
+controller:
+  cbf:
+    k1: 8.0
+    k2: 10.0
+    agent_radius: 0.05
+    buffer_obstacles: 0.10
+    buffer_agents: 0.05
+
+  braking:
+    enabled: true
+    margin: 0.0
+    activate_h: 0.0
+    gain: 2.0
+    clamp_v_close: 50.0

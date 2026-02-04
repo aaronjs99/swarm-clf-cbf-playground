@@ -1,0 +1,6 @@
+viz:
+  backend: "TkAgg"
+  dim: "2d" # Default, can be overridden
+  mode: "live"
+  record: false
+  safety_plot: true

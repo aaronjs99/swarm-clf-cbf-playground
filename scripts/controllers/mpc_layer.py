@@ -39,6 +39,10 @@ class SamplingMPCPlanner:
         self._rng = np.random.default_rng(int(rng_seed))
 
     def _rollout(self, x0, v0, u, is_2d: bool):
+        """
+        Integrates kinematics forward for H steps with constant control u.
+        Returns the final position and velocity.
+        """
         x = x0.copy()
         v = v0.copy()
         for _ in range(self.H):
@@ -73,6 +77,11 @@ class SamplingMPCPlanner:
         return pen
 
     def plan(self, x, v, goal, threats, a_max: float, is_2d: bool, d_safe_fn):
+        """
+        Main planning method.
+        Samples candidate controls, evaluates them, and returns the best one.
+        Returns None if planner is disabled or fails.
+        """
         if not self.enabled:
             return None
 
@@ -132,7 +141,26 @@ class SamplingMPCPlanner:
             else:
                 # 3D arbitrary lateral
                 # Just pick a couple of random orthagonals or cross with velocity
-                pass  # simplicity
+                # 3D arbitrary lateral
+                # Try global Z first
+                tmp = np.array([0.0, 0.0, 1.0])
+                if abs(np.dot(rel_goal / ng, tmp)) > 0.9:
+                    tmp = np.array([0.0, 1.0, 0.0])
+
+                v1 = np.cross(rel_goal, tmp)
+                n1 = np.linalg.norm(v1)
+                if n1 > 1e-9:
+                    v1 = (v1 / n1) * a_max
+                    add_u(v1)
+                    add_u(-v1)
+
+                    # Second orthogonal
+                    v2 = np.cross(rel_goal, v1)
+                    n2 = np.linalg.norm(v2)
+                    if n2 > 1e-9:
+                        v2 = (v2 / n2) * a_max
+                        add_u(v2)
+                        add_u(-v2)
 
         # C) Evasion (away from nearest threat)
         if filtered_threats:

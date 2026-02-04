@@ -1,0 +1,12 @@
+controller:
+  mpc:
+    enabled: true
+    stride: 15
+    blend: 0.5
+    horizon_steps: 8
+    # dt: null # defaults to sim.dt
+    num_samples: 32
+    goal_weight: 5.0
+    effort_weight: 0.02
+    collision_weight: 30.0
+    rng_seed: 0

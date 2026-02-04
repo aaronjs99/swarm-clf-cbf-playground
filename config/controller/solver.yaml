@@ -1,0 +1,9 @@
+controller:
+  qp:
+    slack_weight: 1.0e5
+    fallback_zero_on_fail: true
+
+  admm:
+    enabled: false
+    rho: 0.1
+    iters: 3
