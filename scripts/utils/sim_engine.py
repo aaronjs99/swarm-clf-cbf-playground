@@ -37,9 +37,7 @@ def run_simulation(cfg, ctrl):
 
     dt = float(sim_cfg["dt"])
     record = bool(cfg["viz"]["record"])
-    sub_steps = int(
-        sim_cfg["substeps"]["record"] if record else sim_cfg["substeps"]["live"]
-    )
+    sub_steps = int(sim_cfg["substeps"]["record"] if record else sim_cfg["substeps"]["live"])
 
     goal_delta = float(term_cfg["goal_delta"])
     settle_seconds = float(term_cfg["settle_seconds"])
@@ -49,22 +47,37 @@ def run_simulation(cfg, ctrl):
     # Dynamics realism config
     dyn_cfg = sim_cfg.get("dynamics", {}) or {}
 
+    # Flight config (3D waypoint profile)
+    flight_cfg = (cfg.get("world", {}) or {}).get("flight", {}) or {}
+    z_cruise = float(flight_cfg.get("z_cruise", 6.0))
+
     # Init State
-    agents = [
-        {
+    agents = []
+    for i, p in enumerate(agents_init):
+        g = goals_init[i].copy()
+
+        a = {
             "pos": p.copy(),
-            "goal": goals_init[i].copy(),
+            "goal": g.copy(),
             "vel": np.zeros(3),
-            # Applied acceleration state for actuator lag realism
             "acc": np.zeros(3),
             "path": [],
         }
-        for i, p in enumerate(agents_init)
-    ]
+
+        # 3D waypoint profile: takeoff -> cruise -> land
+        if dim == 3:
+            mid = 0.5 * (p + g)
+            mid[2] = z_cruise
+            a["goal_seq"] = [mid.copy(), g.copy()]
+            a["goal_idx"] = 0
+            a["goal"] = a["goal_seq"][0].copy()
+
+        agents.append(a)
+
     logger = SafetyLogger(len(agents))
 
     # Matplotlib Setup
-    fig = plt.figure(figsize=(8, 8))
+    fig = plt.figure(figsize=(9, 8))
     ax = fig.add_subplot(111, projection="3d" if dim == 3 else None)
 
     if dim == 2:
@@ -78,12 +91,11 @@ def run_simulation(cfg, ctrl):
         if walls_cfg.get("enabled", False):
             w = walls_cfg
             xx, yy = np.meshgrid([w["x_min"], w["x_max"]], [w["y_min"], w["y_max"]])
-            ax.plot_surface(
-                xx, yy, np.full_like(xx, w.get("z_min", 0.0)), alpha=0.05, color="k"
-            )
-            ax.plot_surface(
-                xx, yy, np.full_like(xx, w.get("z_max", 10.0)), alpha=0.05, color="k"
-            )
+            ax.plot_surface(xx, yy, np.full_like(xx, w.get("z_min", 0.0)), alpha=0.05, color="k")
+            ax.plot_surface(xx, yy, np.full_like(xx, w.get("z_max", 10.0)), alpha=0.05, color="k")
+
+        # A nicer default 3D view
+        ax.view_init(elev=18, azim=-55)
 
     # Animator
     animator = SwarmAnimator(
@@ -103,26 +115,20 @@ def run_simulation(cfg, ctrl):
 
     def all_agents_within_delta():
         for a in agents:
-            d = np.linalg.norm(a["pos"][:dim] - a["goal"][:dim])
+            d = np.linalg.norm(a["pos"][:dim] - goals_init[int(np.clip(len(a.get("path", [])) >= 0, 0, 1)) * 0][:dim]) if False else np.linalg.norm(a["pos"][:dim] - a.get("goal_seq", [a["goal"]])[-1][:dim])
             if d > goal_delta:
                 return False
         return True
 
     def frame_gen():
-        """Generator for animation frames."""
         for k in count(0):
             if done or k >= max_frames:
                 break
             yield k
 
     def update(frame):
-        """
-        Animation update callback.
-        Steps physics, checks termination, and updates visualization.
-        """
         nonlocal reached_frame, done
 
-        # Step Physics
         swarm_pos_accum = physics_step(
             agents=agents,
             obs=obs,
@@ -131,8 +137,8 @@ def run_simulation(cfg, ctrl):
             dim=dim,
             w_cfg=cfg["world"]["obstacles"].get("walls", {}),
             dyn_cfg=cfg["world"]["obstacles"].get("dynamic", {}) or {},
-            # new: agent dynamics realism section
             agent_dyn_cfg=dyn_cfg,
+            flight_cfg=flight_cfg,
             sub_steps=sub_steps,
             agent_radius=float(cbf_cfg["agent_radius"]),
             logger=logger,
@@ -143,7 +149,6 @@ def run_simulation(cfg, ctrl):
             },
         )
 
-        # Check Termination
         if reached_frame is None and all_agents_within_delta():
             reached_frame = frame
 
@@ -154,7 +159,6 @@ def run_simulation(cfg, ctrl):
                     ani.event_source.stop()
                 plt.close(fig)
 
-        # Update Viz
         c_p = swarm_pos_accum / (len(agents) * sub_steps)
         return animator.update(agents, obs, c_p, frame)
 

@@ -22,6 +22,26 @@ def _clip_speed(v: np.ndarray, v_max: float, dim: int) -> np.ndarray:
     return v
 
 
+def _update_waypoint_goal_inplace(agent: dict, switch_dist: float, dim: int):
+    """
+    If agent has a goal sequence, advance to the next waypoint when close enough.
+    """
+    seq = agent.get("goal_seq", None)
+    if not seq:
+        return
+
+    idx = int(agent.get("goal_idx", 0))
+    idx = max(0, min(idx, len(seq) - 1))
+
+    cur_goal = np.asarray(seq[idx], dtype=float).reshape(3)
+    agent["goal"] = cur_goal
+
+    dist = float(np.linalg.norm(agent["pos"][:dim] - cur_goal[:dim]))
+    if dist <= float(switch_dist) and idx < len(seq) - 1:
+        agent["goal_idx"] = idx + 1
+        agent["goal"] = np.asarray(seq[idx + 1], dtype=float).reshape(3)
+
+
 def physics_step(
     agents,
     obs,
@@ -32,8 +52,8 @@ def physics_step(
     dyn_cfg,
     sub_steps,
     agent_radius,
-    # new: realism dynamics for agents (not obstacles)
     agent_dyn_cfg=None,
+    flight_cfg=None,
     logger=None,
     t_start=0.0,
     log_params=None,
@@ -52,6 +72,7 @@ def physics_step(
         sub_steps: Number of physics steps per visual frame.
         agent_radius: Radius of agents.
         agent_dyn_cfg: Agent dynamics realism config (accel lag, drag, vmax, noise).
+        flight_cfg: Flight config (waypoints switching in 3D).
         logger: Optional SafetyLogger instance.
         t_start: Start time for this batch of steps.
         log_params: Dictionary of params for logging (buffers, etc.)
@@ -64,6 +85,8 @@ def physics_step(
     rest_agents = float(dyn_cfg.get("restitution_agents", 0.0))
 
     agent_dyn_cfg = agent_dyn_cfg or {}
+    flight_cfg = flight_cfg or {}
+
     tau = float(agent_dyn_cfg.get("accel_time_constant", 0.0))
     drag = float(agent_dyn_cfg.get("linear_drag", 0.0))
     noise_std = float(agent_dyn_cfg.get("accel_noise_std", 0.0))
@@ -72,20 +95,27 @@ def physics_step(
     v_max_3d = float(agent_dyn_cfg.get("v_max_3d", 0.0))
     v_max = v_max_2d if dim == 2 else v_max_3d
 
+    g_2d = float(agent_dyn_cfg.get("gravity_2d", 0.0))
+    g_3d = float(agent_dyn_cfg.get("gravity_3d", 9.8))
+    g = g_2d if dim == 2 else g_3d
+    g_vec = np.array([0.0, 0.0, -g], dtype=float)
+
+    switch_dist = float(flight_cfg.get("waypoint_switch_dist", 0.45))
+
     # Stable RNG for process noise
     rng = np.random.default_rng(12345)
 
     for s in range(sub_steps):
         # 1) Update obstacle positions
         for o in obs:
-            if o.get("kind") == "sphere":
-                o["pos"] += o["vel"] * dt
-                if w_cfg.get("enabled", False):
-                    bounce_sphere_off_walls_inplace(o, w_cfg, dim)
-            else:
-                o["pos"] += o["vel"] * dt
+            vel = np.asarray(o.get("vel", np.zeros(3)), dtype=float).reshape(3)
+            if float(np.linalg.norm(vel)) <= 0.0:
+                continue
+            o["pos"] = np.asarray(o["pos"], dtype=float).reshape(3) + vel * dt
+            if o.get("kind") == "sphere" and w_cfg.get("enabled", False):
+                bounce_sphere_off_walls_inplace(o, w_cfg, dim)
 
-        # 1b) Sphere-sphere collisions for obstacles
+        # 1b) Sphere-sphere collisions for obstacles (only for kind == sphere)
         resolve_sphere_sphere_collisions(obs, dim=dim, restitution=rest_obs)
 
         # 2) Agent control + integrate
@@ -93,6 +123,10 @@ def physics_step(
 
         for i, a in enumerate(agents):
             a.setdefault("acc", np.zeros(3))
+
+            # Update waypoint-goal for 3D flight profile
+            if dim == 3:
+                _update_waypoint_goal_inplace(a, switch_dist=switch_dist, dim=dim)
 
             acc_cmd = ctrl.compute_control(
                 a["pos"], a["vel"], a["goal"], obs, i, curr_states
@@ -117,13 +151,7 @@ def physics_step(
                     n[2] = 0.0
                 acc_applied = acc_applied + n
 
-            g_2d = float(agent_dyn_cfg.get("gravity_2d", 0.0))
-            g_3d = float(agent_dyn_cfg.get("gravity_3d", 9.8))
-            g = g_2d if dim == 2 else g_3d
-            g_vec = np.array([0.0, 0.0, -g], dtype=float)
-
             # (C) Velocity integration with linear drag
-            # v_dot = a_applied - drag * v
             a["vel"] = a["vel"] + (acc_applied + g_vec - drag * a["vel"]) * dt
 
             # (D) Speed limit

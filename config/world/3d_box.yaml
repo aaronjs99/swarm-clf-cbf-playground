@@ -9,13 +9,50 @@ agents:
     mode: "box"
 
 world:
+  # Simple 3D "takeoff-cruise-land" profile.
+  flight:
+    z_start: 0.5
+    z_goal: 0.0
+    z_cruise: 6.0
+    waypoint_switch_dist: 0.45
+
   obstacles:
+    # Keep existing key for compatibility. We'll interpret this as total "props"
+    # and split into trees/cars/saucers when dim=3.
     dynamic:
       enabled: true
       vel_range: [-1.0, 1.0]
-    
+
+    # Used only as a fallback. In 3D, we generate scene props below.
     radius_range: [0.2, 0.5]
-    num: 12
+    num: 18
+
+    # "Realistic" 3D scene props.
+    scene3d:
+      enabled: true
+
+      trees:
+        num: 14
+        trunk_radius_range: [0.10, 0.18]
+        trunk_height_range: [2.5, 4.2]
+        canopy_radius_range: [0.65, 1.05]
+        safety_margin: 0.25
+
+      cars:
+        num: 3
+        size_range:
+          # length, width, height
+          min: [1.4, 0.7, 0.45]
+          max: [2.2, 1.0, 0.75]
+        safety_margin: 0.35
+
+      saucers:
+        num: 3
+        center_z_range: [7.0, 9.0]
+        radii_range:
+          min: [0.8, 0.8, 0.20]
+          max: [1.4, 1.4, 0.35]
+        safety_margin: 0.35
 
     walls:
       enabled: true
