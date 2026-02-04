@@ -1,3 +1,4 @@
+# ===== ./scripts/utils/sim_engine.py =====
 import os
 from itertools import count
 
@@ -25,7 +26,6 @@ class SafetyLogger:
             h_buf_vals, h_phys_vals = [], []
             for o in obstacles:
                 kind = o.get("kind", "sphere")
-                # Ensure the logger accounts for the agent's radius
                 if kind == "sphere":
                     safety_dist = agent_radius + o["r"] + buffer_obs
                     h_buf_vals.append(
@@ -108,20 +108,17 @@ def _resolve_sphere_sphere_collisions(obs, dim: int, restitution: float = 1.0):
             min_dist = ra + rb
 
             if dist <= 1e-12:
-                # Degenerate: random tiny separation to define a normal
                 n_hat = np.array([1.0, 0.0, 0.0])
                 dist = 1e-12
             else:
                 n_hat = delta / dist
 
-            # No overlap, no collision
             if dist >= min_dist:
                 continue
 
             va = a["vel"]
             vb = b["vel"]
 
-            # Separate positions (positional correction) to eliminate overlap
             penetration = min_dist - dist
 
             ma = _sphere_mass(ra, dim)
@@ -130,34 +127,133 @@ def _resolve_sphere_sphere_collisions(obs, dim: int, restitution: float = 1.0):
             inv_mb = 1.0 / mb
             inv_sum = inv_ma + inv_mb
 
-            # Push apart along normal, weighted by inverse mass (lighter moves more)
             pa -= n_hat * penetration * (inv_ma / inv_sum)
             pb += n_hat * penetration * (inv_mb / inv_sum)
 
-            # Relative velocity along normal
             v_rel = vb - va
             v_rel_n = float(np.dot(v_rel, n_hat))
 
-            # If separating already, do not apply impulse
             if v_rel_n >= 0.0:
                 continue
 
-            # Impulse magnitude
             j_imp = -(1.0 + e) * v_rel_n / inv_sum
-
             impulse = j_imp * n_hat
             va -= impulse * inv_ma
             vb += impulse * inv_mb
 
-            # Re-assign (in case references are not in-place)
             a["pos"] = pa
             b["pos"] = pb
             a["vel"] = va
             b["vel"] = vb
 
 
-def _coerce_int_or_none(x):
+def _bounce_sphere_off_walls_inplace(o, w_cfg, dim: int):
+    # Sphere obstacle bounce against axis-aligned walls.
+    # Uses the obstacle's radius.
+    r = float(o["r"])
 
+    # X
+    if o["pos"][0] - r < w_cfg["x_min"]:
+        o["vel"][0] *= -1
+        o["pos"][0] = w_cfg["x_min"] + r
+    elif o["pos"][0] + r > w_cfg["x_max"]:
+        o["vel"][0] *= -1
+        o["pos"][0] = w_cfg["x_max"] - r
+
+    # Y
+    if o["pos"][1] - r < w_cfg["y_min"]:
+        o["vel"][1] *= -1
+        o["pos"][1] = w_cfg["y_min"] + r
+    elif o["pos"][1] + r > w_cfg["y_max"]:
+        o["vel"][1] *= -1
+        o["pos"][1] = w_cfg["y_max"] - r
+
+    # Z (3D only)
+    if dim == 3:
+        if o["pos"][2] - r < w_cfg["z_min"]:
+            o["vel"][2] *= -1
+            o["pos"][2] = w_cfg["z_min"] + r
+        elif o["pos"][2] + r > w_cfg["z_max"]:
+            o["vel"][2] *= -1
+            o["pos"][2] = w_cfg["z_max"] - r
+
+
+def _agents_enforce_world_bounds(
+    agents,
+    w_cfg,
+    dim: int,
+    agent_radius: float,
+    restitution: float = 0.0,
+):
+    """
+    Hard simulator-side world constraint for agents.
+
+    Why: CBFs are continuous-time; our sim is discrete-time with optional slack.
+    So an agent can step across a wall between controller updates. This prevents
+    "teleporting" by enforcing that positions remain inside the wall box.
+
+    Behavior:
+      - clamp position to [min+R, max-R]
+      - optionally bounce velocity component with restitution in [0, 1]
+        * 0.0 => "stick" (zero out that velocity component on impact)
+        * 1.0 => perfectly elastic reflection
+    """
+    if not (isinstance(w_cfg, dict) and w_cfg.get("enabled", False)):
+        return
+
+    e = float(restitution)
+    e = max(0.0, min(1.0, e))
+    R = float(agent_radius)
+
+    x_min = float(w_cfg["x_min"]) + R
+    x_max = float(w_cfg["x_max"]) - R
+    y_min = float(w_cfg["y_min"]) + R
+    y_max = float(w_cfg["y_max"]) - R
+
+    if dim == 3:
+        z_min = float(w_cfg["z_min"]) + R
+        z_max = float(w_cfg["z_max"]) - R
+    else:
+        z_min = 0.0
+        z_max = 0.0
+
+    for a in agents:
+        p = a["pos"]
+        v = a["vel"]
+
+        # X
+        if p[0] < x_min:
+            p[0] = x_min
+            v[0] = -e * v[0]
+        elif p[0] > x_max:
+            p[0] = x_max
+            v[0] = -e * v[0]
+
+        # Y
+        if p[1] < y_min:
+            p[1] = y_min
+            v[1] = -e * v[1]
+        elif p[1] > y_max:
+            p[1] = y_max
+            v[1] = -e * v[1]
+
+        # Z
+        if dim == 3:
+            if p[2] < z_min:
+                p[2] = z_min
+                v[2] = -e * v[2]
+            elif p[2] > z_max:
+                p[2] = z_max
+                v[2] = -e * v[2]
+        else:
+            p[2] = 0.0
+            v[2] = 0.0
+
+        a["pos"] = p
+        a["vel"] = v
+
+
+def _coerce_int_or_none(x):
     if x is None:
         return None
     if isinstance(x, (int, np.integer)):
@@ -174,11 +270,9 @@ def get_obstacles(cfg, agents_init, goals_init, dim):
     np.random.seed(int(cfg.get("seed", 42)))
     obs = []
 
-    # 1. 2D/3D Wall Generation
     w_key = "walls_2d" if dim == 2 else "walls_3d"
     if obs_cfg.get(w_key, {}).get("enabled", False):
         w = obs_cfg[w_key]
-        # X and Y walls (Common to both)
         obs.append(
             {
                 "kind": "wall",
@@ -213,7 +307,6 @@ def get_obstacles(cfg, agents_init, goals_init, dim):
         )
 
         if dim == 3:
-            # Z walls for Cuboid
             obs.append(
                 {
                     "kind": "wall",
@@ -231,7 +324,6 @@ def get_obstacles(cfg, agents_init, goals_init, dim):
                 }
             )
 
-        # Auto-calculate Spawn Box inside walls
         margin = 1.2
         box_min = np.array(
             [w["x_min"] + margin, w["y_min"] + margin, w.get("z_min", 0) + margin]
@@ -243,7 +335,6 @@ def get_obstacles(cfg, agents_init, goals_init, dim):
         box_min = np.array(obs_cfg["spawn_box_3d"]["min"])
         box_max = np.array(obs_cfg["spawn_box_3d"]["max"])
 
-    # 2. Sphere Generation with initial velocity
     num = int(
         obs_cfg.get("num_override")
         or (obs_cfg["num_obs_2d"] if dim == 2 else obs_cfg["num_obs_3d"])
@@ -272,7 +363,6 @@ def _init_agents_and_goals(cfg, dim, n):
     w_key = "walls_2d" if dim == 2 else "walls_3d"
     w = cfg["world"]["obstacles"].get(w_key, {})
 
-    # Calculate centering
     y_mid = (w["y_max"] + w["y_min"]) / 2.0 if w.get("enabled") else 0.0
     z_mid = (w["z_max"] + w["z_min"]) / 2.0 if (dim == 3 and w.get("enabled")) else 0.0
 
@@ -284,10 +374,8 @@ def _init_agents_and_goals(cfg, dim, n):
         goal_cfg = cfg["agents"]["goals"]
         walls_cfg = cfg["world"]["obstacles"].get("walls_2d", {})
 
-        # Determine y-centering based on walls if they exist
         if walls_cfg.get("enabled", False):
             y_mid = (walls_cfg["y_max"] + walls_cfg["y_min"]) / 2.0
-            # Start lanes so the whole swarm is centered vertically
             y_start = y_mid - ((n - 1) * init_cfg["lanes"]["y_spacing"]) / 2.0
         else:
             y_start = 0.0
@@ -336,8 +424,6 @@ def _init_agents_and_goals(cfg, dim, n):
             lanes = goal_cfg["lanes"]
             y_spacing = float(lanes["y_spacing"])
             reverse = bool(lanes.get("reverse_order", True))
-
-            # Recalculate y_start for goals to ensure they are also centered
             y_start_goal = y_mid - ((n - 1) * y_spacing) / 2.0
 
             ys = (
@@ -352,7 +438,6 @@ def _init_agents_and_goals(cfg, dim, n):
                 for i in range(n)
             ]
     else:
-        # Centered 3D Lane Initialization
         agents_init = [
             np.array([w["x_min"] + 1.0, y_start + i * y_spacing, z_mid])
             for i in range(n)
@@ -402,19 +487,14 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
     fig = plt.figure(figsize=(8, 8))
     ax = fig.add_subplot(111, projection="3d" if dim == 3 else None)
     if dim == 2:
-        ax.set_aspect("equal")  # Prevents circles from looking like ellipses
-
-        # Frame the box based on config if walls are enabled
+        ax.set_aspect("equal")
         walls_cfg = cfg["world"]["obstacles"].get("walls_2d", {})
         if walls_cfg.get("enabled", False):
-            # Pad the limits by 2 units so the walls aren't touching the edge
             ax.set_xlim(float(walls_cfg["x_min"]) - 2, float(walls_cfg["x_max"]) + 2)
             ax.set_ylim(float(walls_cfg["y_min"]) - 2, float(walls_cfg["y_max"]) + 2)
     else:
-        # 3D Wall Visualization (Rendering the Floor/Ceiling)
         if cfg["world"]["obstacles"].get("walls_3d", {}).get("enabled", False):
             w = cfg["world"]["obstacles"]["walls_3d"]
-            # Render a faint grid or plane for the floor (z_min)
             xx, yy = np.meshgrid([w["x_min"], w["x_max"]], [w["y_min"], w["y_max"]])
             ax.plot_surface(xx, yy, np.full_like(xx, w["z_min"]), alpha=0.05, color="k")
             ax.plot_surface(xx, yy, np.full_like(xx, w["z_max"]), alpha=0.05, color="k")
@@ -445,12 +525,10 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
         for i, a in enumerate(agents):
             color = lines[i].get_color()
 
-            # Body: radius = agent_radius
             body = plt.Circle(a["pos"][:2], agent_radius, color=color, alpha=0.9)
             ax.add_patch(body)
             agent_body_patches.append(body)
 
-            # Halo for agent-agent buffer: radius = agent_radius + buffer_agents
             halo = plt.Circle(
                 a["pos"][:2],
                 agent_radius + buffer_agents,
@@ -462,7 +540,6 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
             ax.add_patch(halo)
             agent_halo_patches.append(halo)
     else:
-        # 3D: Initialize placeholders for wireframes
         for i, a in enumerate(agents):
             agent_body_patches.append(None)
             agent_halo_patches.append(None)
@@ -470,16 +547,13 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
     if dim == 2:
         obs_vis = []
         obs_halos = []
-        sphere_obs = [o for o in obs if o.get("kind") == "sphere"]
 
         for o in obs:
             if o.get("kind", "sphere") == "sphere":
-                # Physical obstacle
                 patch = plt.Circle(o["pos"][:2], o["r"], alpha=0.20, color="r")
                 ax.add_patch(patch)
                 obs_vis.append(patch)
 
-                # Halo: obstacle buffer (thickness buffer_obs)
                 halo = plt.Circle(
                     o["pos"][:2],
                     o["r"] + buffer_obs,
@@ -492,13 +566,11 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
                 obs_halos.append(halo)
 
             elif o.get("kind") == "wall":
-                # Draw a line for the wall boundary
                 n, p = o["normal"], o["pos"]
                 t_vec = np.array([-n[1], n[0], 0])
                 p1, p2 = p + t_vec * 20, p - t_vec * 20
                 (line,) = ax.plot([p1[0], p2[0]], [p1[1], p2[1]], "r--", alpha=0.4)
                 obs_vis.append(line)
-
     else:
         obs_vis = [
             ax.plot_wireframe(
@@ -522,50 +594,30 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
 
     def update(frame):
         nonlocal obs_vis, reached_frame, done
-        swarm_pos_accum = np.zeros(3)  # Fix for UnboundLocalError
+        swarm_pos_accum = np.zeros(3)
+
         w_cfg = cfg["world"]["obstacles"].get(
             "walls_2d" if dim == 2 else "walls_3d", {}
         )
-        rest = float(
-            cfg["world"]["obstacles"].get("dynamic", {}).get("restitution", 1.0)
-        )
+
+        dyn_cfg = cfg["world"]["obstacles"].get("dynamic", {}) or {}
+        rest_obs = float(dyn_cfg.get("restitution", 1.0))
+        rest_agents = float(dyn_cfg.get("restitution_agents", 0.0))
 
         for s in range(sub_steps):
-            # 1. Update Obstacles + BOUNCE Physics
+            # 1) Update obstacle positions
             for o in obs:
                 if o.get("kind") == "sphere":
                     o["pos"] += o["vel"] * dt
-
-                    # Bounce off X walls (Left/Right)
-                    if o["pos"][0] - o["r"] < w_cfg["x_min"]:
-                        o["vel"][0] *= -1
-                        o["pos"][0] = w_cfg["x_min"] + o["r"]
-                    elif o["pos"][0] + o["r"] > w_cfg["x_max"]:
-                        o["vel"][0] *= -1
-                        o["pos"][0] = w_cfg["x_max"] - o["r"]
-
-                    # Bounce off Y walls (Bottom/Top)
-                    if o["pos"][1] - o["r"] < w_cfg["y_min"]:
-                        o["vel"][1] *= -1
-                        o["pos"][1] = w_cfg["y_min"] + o["r"]
-                    elif o["pos"][1] + o["r"] > w_cfg["y_max"]:
-                        o["vel"][1] *= -1
-                        o["pos"][1] = w_cfg["y_max"] - o["r"]
-
-                    if dim == 3:
-                        if o["pos"][2] - o["r"] < w_cfg["z_min"]:
-                            o["vel"][2] *= -1
-                            o["pos"][2] = w_cfg["z_min"] + o["r"]
-                        elif o["pos"][2] + o["r"] > w_cfg["z_max"]:
-                            o["vel"][2] *= -1
-                            o["pos"][2] = w_cfg["z_max"] - o["r"]
+                    if w_cfg.get("enabled", False):
+                        _bounce_sphere_off_walls_inplace(o, w_cfg, dim)
                 else:
                     o["pos"] += o["vel"] * dt
 
-            # After updating sphere positions + wall bounces for all obstacles:
-            _resolve_sphere_sphere_collisions(obs, dim=dim, restitution=rest)
+            # 1b) Sphere-sphere collisions
+            _resolve_sphere_sphere_collisions(obs, dim=dim, restitution=rest_obs)
 
-            # 2. Agent Control Loop
+            # 2) Agent control + integrate
             curr_states = [{"pos": a["pos"], "vel": a["vel"]} for a in agents]
 
             for i, a in enumerate(agents):
@@ -574,12 +626,27 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
                 )
                 if dim == 2:
                     acc[2] = 0.0
+
                 a["vel"] += acc * dt
                 a["pos"] += a["vel"] * dt
-                a["path"].append(a["pos"].copy())
-                swarm_pos_accum += a["pos"]  # Accumulate positions
 
-            # 3. Log Safety
+                if dim == 2:
+                    a["pos"][2] = 0.0
+                    a["vel"][2] = 0.0
+
+                a["path"].append(a["pos"].copy())
+                swarm_pos_accum += a["pos"]
+
+            # 2b) HARD world bounds for agents (prevents discrete-time wall tunneling)
+            _agents_enforce_world_bounds(
+                agents=agents,
+                w_cfg=w_cfg,
+                dim=dim,
+                agent_radius=agent_radius,
+                restitution=rest_agents,
+            )
+
+            # 3) Log safety
             logger.log(
                 (frame * sub_steps + s) * dt,
                 agents,
@@ -597,11 +664,11 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
         if reached_frame is not None and frame >= reached_frame + frames_after_reach:
             done = True
             if not record:
-                # Only stop if animation has an event source
                 if hasattr(ani, "event_source") and ani.event_source is not None:
                     ani.event_source.stop()
                 plt.close(fig)
 
+        # Update trajectories
         for i, a in enumerate(agents):
             h = np.array(a["path"])
             lines[i].set_data(h[:, 0], h[:, 1])
@@ -613,18 +680,16 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
         if dim == 3:
             centroid_plot.set_3d_properties([c_p[2]])
 
+        # Update agent visuals
         if dim == 2:
             for i, a in enumerate(agents):
                 agent_body_patches[i].center = a["pos"][:2]
                 agent_halo_patches[i].center = a["pos"][:2]
-
         elif frame % 5 == 0:
-            # 3D Agent Updates (Wireframes are heavy, update less often)
             u_m, v_m = np.mgrid[0 : 2 * np.pi : 10j, 0 : np.pi : 10j]
             for i, a in enumerate(agents):
                 color = lines[i].get_color()
 
-                # Update Body
                 if agent_body_patches[i] is not None:
                     agent_body_patches[i].remove()
                 agent_body_patches[i] = ax.plot_wireframe(
@@ -635,7 +700,6 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
                     alpha=0.8,
                 )
 
-                # Update Halo
                 if agent_halo_patches[i] is not None:
                     agent_halo_patches[i].remove()
                 r_halo = agent_radius + buffer_agents
@@ -647,60 +711,26 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
                     alpha=0.15,
                 )
 
-        for i, o in enumerate(obs):
-            if dim == 2:
-                if hasattr(obs_vis[i], "center"):  # Sphere
-                    # Note: We need to update halos as well, but `obs_vis` mixed spheres and walls.
-                    # The cleanest way is to iterate over spheres separately or use the index mapping logic.
-                    # Given `obs_vis` order matches `obs` order:
-                    obs_vis[i].center = o["pos"][:2]
-
-                    # Update halo if this is a sphere.
-                    # We need to find the corresponding halo index.
-                    # Simpler strategy: Iterate over spheres separately using the list we built earlier:
-                    pass
-                elif hasattr(obs_vis[i], "set_data"):  # Wall/Line
-                    n, p = o["normal"], o["pos"]
-                    t_vec = np.array([-n[1], n[0], 0])
-                    p1, p2 = p + t_vec * 20, p - t_vec * 20
-                    obs_vis[i].set_data([p1[0], p2[0]], [p1[1], p2[1]])
-
+        # Update obstacle visuals
         if dim == 2:
-            k = 0
-            for o in obs:
-                if o.get("kind") == "sphere":
-                    obs_vis[k].center = o["pos"][:2]
-                    obs_halos[k].center = o["pos"][:2]
-                    k += 1
-                elif o.get("kind") == "wall":
-                    # wall update handled above via direct set_data on obs_vis[index]
-                    # BUT wait - obs_vis has mixed types.
-                    # Correction: obs_vis contains ALL obstacles in order.
-                    # obs_halos ONLY contains sphere halos.
-                    # So we need to be careful with indices.
-                    pass
-
-            # Re-do the loop correctly based on the plan
-            # "maintain a separate list only for spheres" -> we did: sphere_obs = [...]
-            # But inside update loop we iterate 'obs'.
-
-            # Correct logic:
             sphere_idx = 0
             for i, o in enumerate(obs):
                 if o.get("kind") == "sphere":
                     if hasattr(obs_vis[i], "center"):
                         obs_vis[i].center = o["pos"][:2]
-
                     obs_halos[sphere_idx].center = o["pos"][:2]
                     sphere_idx += 1
-
+                elif o.get("kind") == "wall":
+                    if hasattr(obs_vis[i], "set_data"):
+                        n, p = o["normal"], o["pos"]
+                        t_vec = np.array([-n[1], n[0], 0])
+                        p1, p2 = p + t_vec * 20, p - t_vec * 20
+                        obs_vis[i].set_data([p1[0], p2[0]], [p1[1], p2[1]])
         elif frame % 5 == 0:
             for i, o in enumerate(obs):
                 if o.get("kind") == "sphere":
                     obs_vis[i].remove()
                     u_m, v_m = np.mgrid[0 : 2 * np.pi : 10j, 0 : np.pi : 10j]
-
-                    # Physical Obstacle
                     obs_vis[i] = ax.plot_wireframe(
                         o["pos"][0] + o["r"] * np.cos(u_m) * np.sin(v_m),
                         o["pos"][1] + o["r"] * np.sin(u_m) * np.sin(v_m),
@@ -708,6 +738,7 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
                         alpha=0.1,
                         color="r",
                     )
+
         return lines + [centroid_plot]
 
     def frame_gen():
@@ -719,7 +750,6 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
     interval_ms = int(sim_cfg["interval_ms"])
 
     if mode == "still":
-        # Run a single update and show the resulting figure
         update(0)
         plt.show(block=True)
     else:
@@ -732,7 +762,6 @@ def _execute_sim(cfg, ctrl, obs, agents_init, goals_init, dim):
             cache_frame_data=False,
         )
 
-        # If backend cannot create timers, event_source ends up None.
         if getattr(ani, "event_source", None) is None and not record:
             print(
                 "[warn] Matplotlib backend cannot animate (no timer). Falling back to record mode."

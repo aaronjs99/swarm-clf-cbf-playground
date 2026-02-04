@@ -9,7 +9,7 @@ viz:
 
 sim:
   dt: 0.02
-  interval_ms: 10
+  interval_ms: 50
   substeps:
     live: 2
     record: 1
@@ -70,31 +70,28 @@ world:
       min: [ 0.5,   0.5,  0.5]
       max: [ 4.5,   4.5,  4.5]
       
-    clear_zone_margin: 0.8
-
 limits:
   nom_clip_fraction: 0.8
 
 controller:
-  dim_defaults:
-    a_max_2d: 20.0
-    a_max_3d: 25.0
+  admm:
+    enabled: false
+    rho: 0.1
+    iters: 3
+
+  braking:
+    enabled: true
+    margin: 0.0
+    activate_h: 0.0
+    gain: 2.0
+    clamp_v_close: 50.0
 
   cbf:
-    k1: 15.0
+    k1: 8.0
     k2: 10.0
     agent_radius: 0.05
     buffer_obstacles: 0.10
     buffer_agents: 0.05
-
-  qp:
-    slack_weight: 1.0e12
-    fallback_zero_on_fail: true
-
-  admm:
-    enabled: true
-    rho: 0.1
-    iters: 3
 
   connectivity:
     enabled: true
@@ -103,10 +100,25 @@ controller:
     l2_threshold: 0.5
     inject_into_nominal: false
 
+  dim_defaults:
+    a_max_2d: 30.0
+    a_max_3d: 40.0
+
+  mpc:
+    enabled: true
+    stride: 15
+    blend: 0.5
+    horizon_steps: 8
+    dt: 0.02
+    num_samples: 32
+    goal_weight: 5.0
+    effort_weight: 0.02
+    collision_weight: 30.0
+    rng_seed: 0
+
   nominal:
     enabled: true
 
-    # Far-field goal tracking (unit-vector push) with damping
     v_damp_far: 2.0
 
     pd:
@@ -120,3 +132,7 @@ controller:
       gain_2d: 12.0
       gain_3d: 10.0
       tangent_bias: true
+
+  qp:
+    slack_weight: 1.0e5
+    fallback_zero_on_fail: true

@@ -4,11 +4,14 @@ A compact Python sandbox for **multi-agent navigation** with **Control Lyapunov 
 
 This repo is set up for rapid iteration: tweak the controller, add constraints, swap dynamics, and watch the swarm behave (or misbehave) in real time.
 
+---
+
 ## Why this exists
 
 - **CLF** pulls agents toward their goals.
-- **CBF** keeps them from hitting obstacles and each other.
-- A small QP (quadratic program) resolves the “go fast vs do not die” conflict each timestep.
+- **CBF (ECBF, relative degree 2)** keeps them from hitting obstacles, walls, and each other.
+- A small **QP (quadratic program)** resolves the “go fast vs do not die” conflict each timestep.
+- An optional **planning layer (sampling MPC)** gives longer-horizon intent, while the **CBF-QP still enforces safety**.
 
 The result: goal-seeking behavior with provable-style safety constraints, in a simulation harness that is easy to hack.
 
@@ -18,26 +21,16 @@ The result: goal-seeking behavior with provable-style safety constraints, in a s
 
 - **2D and 3D simulation** (`--dim 2d` or `--dim 3d`)
 - **Swarm support** (`--num_agents N`) with inter-agent collision avoidance
-- **Static or dynamic obstacles** (`--dynamic`)
+- **Static obstacles, walls, and optional dynamics** (bouncing spheres inside a box)
 - **Live animation** or **still render** (`--mode live|still`)
 - **Optional video recording** (`--record`) to `media/`
-- **Safety logging and plot** of barrier values (`--safety_plot true|false`)
+- **Safety logging and plot** (minimum barrier values, connectivity, QP slack)
 - **QP-based controller** using `cvxopt`
-
----
-
-## Repository name suggestion
-
-Recommended GitHub repo name (short, descriptive, not too precious):
-
-**`swarm-clf-cbf-playground`**
-
-Other reasonable options:
-
-- `clf-cbf-swarm-nav`
-- `safe-swarm-qps`
-- `cbf-swarm-sim`
-- `clf-cbf-navigation-sandbox`
+- Optional controller modules you can toggle in `config/default.yaml`:
+  - **Sampling MPC planner** (`controller.mpc.enabled`)
+  - **Connectivity maintenance** via algebraic connectivity (`controller.connectivity.enabled`)
+  - **Braking-distance viability filter** (`controller.braking.enabled`)
+  - Experimental **ADMM-style solve wrapper** (`controller.admm.enabled`)
 
 ---
 
@@ -62,7 +55,7 @@ pip install -e .
 Option B: install dependencies directly
 
 ```bash
-pip install numpy matplotlib cvxopt
+pip install numpy matplotlib cvxopt pyyaml
 ```
 
 ### 3) Run a simulation

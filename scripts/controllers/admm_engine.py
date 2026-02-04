@@ -20,6 +20,8 @@ class ADMMSolver:
         a_max,
         slack_weight,
         fallback_zero_on_fail=True,
+        G_hard=None,
+        b_hard=None,
     ):
         dim = len(u_nom)
         state_manager.initialize_agent(agent_id, dim)
@@ -45,6 +47,8 @@ class ADMMSolver:
                 a_max,
                 slack_weight=slack_weight,
                 fallback_zero_on_fail=fallback_zero_on_fail,
+                G_hard=G_hard,
+                b_hard=b_hard,
             )
             u_local = u_candidate
             last_delta = delta
