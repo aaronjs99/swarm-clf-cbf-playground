@@ -1,6 +1,6 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
 
 def plot_2d_sim(path, obstacles, goal, title="2D CLF-CBF", save_path=None):

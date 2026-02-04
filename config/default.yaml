@@ -1,0 +1,113 @@
+seed: 42
+
+viz:
+  backend: "TkAgg"   # "TkAgg" or "Qt5Agg"
+  dim: "2d"          # "2d" or "3d"
+  mode: "live"       # "live" or "still"
+  record: false
+  safety_plot: true
+
+sim:
+  dt: 0.02
+  interval_ms: 10
+  substeps:
+    live: 5
+    record: 1
+  termination:
+    goal_delta: 0.25
+    settle_seconds: 1.0
+    max_frames: 2000
+
+agents:
+  num_agents: 5
+  init:
+    mode_2d: "lanes"
+    lanes:
+      x_min: -4.0
+      x_max: -2.0
+      y_spacing: 2.0
+  goals:
+    mode_2d: "lanes"
+    lanes:
+      x_min: 10.0
+      x_max: 14.0
+      y_spacing: 2.0
+      reverse_order: true
+
+world:
+  obstacles:
+    num_override: null
+
+    dynamic:
+      enabled: true # Must be true for bouncing to matter
+      vel_range: [-1.5, 1.5] # Higher velocity for clear "bounce" effect
+      
+
+    num_obs_2d: 12
+    num_obs_3d: 15
+    radius_range: [0.3, 0.8]
+
+    walls_2d:
+      enabled: true
+      x_min: -5.0   # Left Wall
+      x_max: 15.0   # Right Wall
+      y_min: -15.0  # Bottom Wall
+      y_max: 5.0    # Top Wall
+    
+    spawn_box_2d:
+      min: [-4.0, -14.0,  0.0]
+      max: [14.0,   4.0,  0.0]
+    spawn_box_3d:
+      min: [ 0.5,   0.5,  0.5]
+      max: [ 9.5,   9.5,  9.5]
+      
+    clear_zone_margin: 0.8
+
+limits:
+  nom_clip_fraction: 0.8
+
+controller:
+  dim_defaults:
+    a_max_2d: 15.0
+    a_max_3d: 20.0
+
+  cbf:
+    k1: 15.0
+    k2: 10.0
+    agent_radius: 0.60
+    buffer_obstacles: 0.30
+    buffer_agents: 0.65
+
+  qp:
+    slack_weight: 1.0e4
+    fallback_zero_on_fail: true
+
+  admm:
+    enabled: true
+    rho: 0.1
+    iters: 2
+
+  connectivity:
+    enabled: true
+    k_neighbors: 3
+    gain: 5.0
+    l2_threshold: 0.5
+    inject_into_nominal: false
+
+  nominal:
+    enabled: true
+
+    # Far-field goal tracking (unit-vector push) with damping
+    v_damp_far: 2.0
+
+    pd:
+      switch_dist: 0.1
+      kp: 5.0
+      kd: 3.0
+
+    repulsion:
+      enabled: true
+      range_extra: 2.5
+      gain_2d: 12.0
+      gain_3d: 10.0
+      tangent_bias: true

@@ -2,12 +2,10 @@ import numpy as np
 
 
 class SwarmStateManager:
-    """Persistent storage for ADMM optimization variables across frames."""
-
     def __init__(self):
-        self.consensus_states = {}  # z
-        self.dual_vars = {}  # y
-        self.local_u = {}  # u
+        self.consensus_states = {}
+        self.dual_vars = {}
+        self.local_u = {}
 
     def initialize_agent(self, agent_id, dim):
         if agent_id not in self.consensus_states:
