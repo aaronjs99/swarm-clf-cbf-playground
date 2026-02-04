@@ -220,38 +220,49 @@ class SwarmController:
 
         for o in threats:
             kind = o.get("kind", "sphere")
-            buffer = self.buffer_agents if kind == "agent" else self.buffer_obstacles
 
             if kind in ["sphere", "agent"]:
-                # Standard Sphere CBF
+                # Safety distance: R_i + R_j + margin
+                r_other = o.get("r", self.agent_radius)
+                margin = (
+                    self.buffer_agents if kind == "agent" else self.buffer_obstacles
+                )
+                safety_dist = self.agent_radius + r_other + margin
+
                 rel = x - o["pos"]
                 rel_vel = v - o["vel"]
-                h = np.linalg.norm(rel) ** 2 - (o["r"] + buffer) ** 2
+
+                # Double Integrator CBF: h(x) = ||p_i - p_j||^2 - d_min^2
+                h = np.linalg.norm(rel) ** 2 - (safety_dist) ** 2
                 h_dot = 2.0 * np.dot(rel, rel_vel)
 
-                grad_h = -2.0 * rel
-                # k1*h_dot + k2*h + ||rel_vel||^2 part is specific to double integrator safety
-                # G*u <= b
-                G.append(grad_h)
+                # G*u <= b  =>  -grad_h * u <= k1*h_dot + k2*h + 2*||rel_vel||^2
+                G.append(-2.0 * rel)
                 b.append(self.k1 * h_dot + self.k2 * h + 2.0 * np.dot(rel_vel, rel_vel))
 
             elif kind == "wall":
-                # Half-plane CBF: n^T(x - p) - buffer >= 0
-                n = o["normal"]  # Unit vector pointing into safe space
-                p = o["pos"]  # Point on the wall
-
-                h = np.dot(n, x - p) - buffer
+                n = o["normal"]
+                p = o["pos"]
+                # Half-plane CBF: h = n^T(x - p) - (r_agent + margin)
+                h = np.dot(n, x - p) - (self.agent_radius + self.buffer_obstacles)
                 h_dot = np.dot(n, v)
 
-                G.append(-n)  # Since G*u <= b, and we want n*u >= ...
+                G.append(-n)
                 b.append(self.k1 * h_dot + self.k2 * h)
 
-        # accel bounds (including z=0 in 2D)
+        # Acceleration bounds are inherently hard constraints
         for i in range(3):
-            r_p, r_n = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
-            r_p[i], r_n[i] = 1.0, -1.0
             limit = 0.0 if (is_2d and i == 2) else self.a_max
-            G.extend([r_p, r_n])
-            b.extend([limit, limit])
+            # u_i <= limit
+            row_p = [0.0, 0.0, 0.0]
+            row_p[i] = 1.0
+            G.append(row_p)
+            b.append(limit)
 
-        return G, b
+            # -u_i <= limit
+            row_n = [0.0, 0.0, 0.0]
+            row_n[i] = -1.0
+            G.append(row_n)
+            b.append(limit)
+
+        return np.array(G), np.array(b)
