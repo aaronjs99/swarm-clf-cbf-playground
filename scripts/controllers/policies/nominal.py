@@ -53,7 +53,9 @@ class NominalPolicy:
             u = -2.0 * v
             if is_2d:
                 u[2] = 0.0
-            return np.clip(u, -self.clip_fraction * self.a_max, self.clip_fraction * self.a_max)
+            return np.clip(
+                u, -self.clip_fraction * self.a_max, self.clip_fraction * self.a_max
+            )
 
         # Parking brake: if you are basically there and already slow, stop.
         if dist_goal <= self.stop_dist and speed <= self.stop_speed:

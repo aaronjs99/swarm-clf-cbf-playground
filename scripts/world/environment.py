@@ -14,24 +14,54 @@ def _nonoverlap_ok(pos, r, points, min_clearance: float) -> bool:
 
 def _add_walls(obs, w, dim: int):
     obs.append(
-        {"kind": "wall", "pos": np.array([0.0, w["y_min"], 0.0]), "normal": np.array([0.0, 1.0, 0.0]), "vel": np.zeros(3)}
+        {
+            "kind": "wall",
+            "pos": np.array([0.0, w["y_min"], 0.0]),
+            "normal": np.array([0.0, 1.0, 0.0]),
+            "vel": np.zeros(3),
+        }
     )
     obs.append(
-        {"kind": "wall", "pos": np.array([0.0, w["y_max"], 0.0]), "normal": np.array([0.0, -1.0, 0.0]), "vel": np.zeros(3)}
+        {
+            "kind": "wall",
+            "pos": np.array([0.0, w["y_max"], 0.0]),
+            "normal": np.array([0.0, -1.0, 0.0]),
+            "vel": np.zeros(3),
+        }
     )
     obs.append(
-        {"kind": "wall", "pos": np.array([w["x_min"], 0.0, 0.0]), "normal": np.array([1.0, 0.0, 0.0]), "vel": np.zeros(3)}
+        {
+            "kind": "wall",
+            "pos": np.array([w["x_min"], 0.0, 0.0]),
+            "normal": np.array([1.0, 0.0, 0.0]),
+            "vel": np.zeros(3),
+        }
     )
     obs.append(
-        {"kind": "wall", "pos": np.array([w["x_max"], 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0]), "vel": np.zeros(3)}
+        {
+            "kind": "wall",
+            "pos": np.array([w["x_max"], 0.0, 0.0]),
+            "normal": np.array([-1.0, 0.0, 0.0]),
+            "vel": np.zeros(3),
+        }
     )
 
     if dim == 3:
         obs.append(
-            {"kind": "wall", "pos": np.array([0.0, 0.0, w.get("z_min", 0.0)]), "normal": np.array([0.0, 0.0, 1.0]), "vel": np.zeros(3)}
+            {
+                "kind": "wall",
+                "pos": np.array([0.0, 0.0, w.get("z_min", 0.0)]),
+                "normal": np.array([0.0, 0.0, 1.0]),
+                "vel": np.zeros(3),
+            }
         )
         obs.append(
-            {"kind": "wall", "pos": np.array([0.0, 0.0, w.get("z_max", 10.0)]), "normal": np.array([0.0, 0.0, -1.0]), "vel": np.zeros(3)}
+            {
+                "kind": "wall",
+                "pos": np.array([0.0, 0.0, w.get("z_max", 10.0)]),
+                "normal": np.array([0.0, 0.0, -1.0]),
+                "vel": np.zeros(3),
+            }
         )
 
 
@@ -46,7 +76,11 @@ def _get_wall_cfg(cfg, dim: int):
 
 def _get_spawn_box(cfg, dim: int):
     obs_cfg = cfg["world"]["obstacles"]
-    box_key = "spawn_box" if "spawn_box" in obs_cfg else ("spawn_box_2d" if dim == 2 else "spawn_box_3d")
+    box_key = (
+        "spawn_box"
+        if "spawn_box" in obs_cfg
+        else ("spawn_box_2d" if dim == 2 else "spawn_box_3d")
+    )
     box_min = np.array(obs_cfg[box_key]["min"], dtype=float)
     box_max = np.array(obs_cfg[box_key]["max"], dtype=float)
     if dim == 2:
@@ -64,13 +98,20 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
 
     For safety math, all of these are still treated as spheres with radius `r`.
     """
+
     def _pick_from(palette, idx):
         return palette[int(idx) % len(palette)]
 
-    car_palette = ["#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#a855f7"]  # blue, red, amber, green, purple
+    car_palette = [
+        "#3b82f6",
+        "#ef4444",
+        "#f59e0b",
+        "#10b981",
+        "#a855f7",
+    ]  # blue, red, amber, green, purple
     saucer_palette = ["#64748b", "#7c3aed", "#0ea5e9"]  # slate, violet, sky
-    trunk_palette = ["#8b5a2b", "#6b4226", "#7a4a2a"]    # browns
-    leaf_palette  = ["#16a34a", "#15803d", "#22c55e", "#4ade80"]  # greens
+    trunk_palette = ["#8b5a2b", "#6b4226", "#7a4a2a"]  # browns
+    leaf_palette = ["#16a34a", "#15803d", "#22c55e", "#4ade80"]  # greens
 
     obs_cfg = cfg["world"]["obstacles"]
     scene = (obs_cfg.get("scene3d") or {}) if isinstance(obs_cfg, dict) else {}
@@ -84,8 +125,14 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
 
     if has_walls:
         margin = 1.2
-        box_min = np.array([w["x_min"] + margin, w["y_min"] + margin, w.get("z_min", 0.0) + margin], dtype=float)
-        box_max = np.array([w["x_max"] - margin, w["y_max"] - margin, w.get("z_max", 10.0) - margin], dtype=float)
+        box_min = np.array(
+            [w["x_min"] + margin, w["y_min"] + margin, w.get("z_min", 0.0) + margin],
+            dtype=float,
+        )
+        box_max = np.array(
+            [w["x_max"] - margin, w["y_max"] - margin, w.get("z_max", 10.0) - margin],
+            dtype=float,
+        )
     else:
         box_min, box_max = _get_spawn_box(cfg, dim=3)
 
@@ -107,18 +154,26 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
     n_cars = int(cars_cfg.get("num", 3))
     n_saucers = int(saucers_cfg.get("num", 3))
 
-    trunk_r_lo, trunk_r_hi = (trees_cfg.get("trunk_radius_range") or [0.10, 0.18])
-    trunk_h_lo, trunk_h_hi = (trees_cfg.get("trunk_height_range") or [2.5, 4.0])
-    canopy_lo, canopy_hi = (trees_cfg.get("canopy_radius_range") or [0.7, 1.1])
+    trunk_r_lo, trunk_r_hi = trees_cfg.get("trunk_radius_range") or [0.10, 0.18]
+    trunk_h_lo, trunk_h_hi = trees_cfg.get("trunk_height_range") or [2.5, 4.0]
+    canopy_lo, canopy_hi = trees_cfg.get("canopy_radius_range") or [0.7, 1.1]
     tree_margin = float(trees_cfg.get("safety_margin", 0.25))
 
-    size_rng = (cars_cfg.get("size_range") or {}) if isinstance(cars_cfg.get("size_range"), dict) else {}
+    size_rng = (
+        (cars_cfg.get("size_range") or {})
+        if isinstance(cars_cfg.get("size_range"), dict)
+        else {}
+    )
     car_min = np.array(size_rng.get("min", [1.4, 0.7, 0.35]), dtype=float)
     car_max = np.array(size_rng.get("max", [2.2, 1.0, 0.55]), dtype=float)
     car_margin = float(cars_cfg.get("safety_margin", 0.35))
 
-    zc_lo, zc_hi = (saucers_cfg.get("center_z_range") or [7.0, 9.0])
-    rad_rng = (saucers_cfg.get("radii_range") or {}) if isinstance(saucers_cfg.get("radii_range"), dict) else {}
+    zc_lo, zc_hi = saucers_cfg.get("center_z_range") or [7.0, 9.0]
+    rad_rng = (
+        (saucers_cfg.get("radii_range") or {})
+        if isinstance(saucers_cfg.get("radii_range"), dict)
+        else {}
+    )
     sau_min = np.array(rad_rng.get("min", [0.8, 0.8, 0.12]), dtype=float)
     sau_max = np.array(rad_rng.get("max", [1.4, 1.4, 0.22]), dtype=float)
     sau_margin = float(saucers_cfg.get("safety_margin", 0.35))
@@ -144,7 +199,9 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
         r_safe = canopy_r + tree_margin
 
         for _try in range(200):
-            pos = place_near_midline(z_value=z_top - 0.3 * canopy_r, x_spread=1.2, y_spread=2.0)
+            pos = place_near_midline(
+                z_value=z_top - 0.3 * canopy_r, x_spread=1.2, y_spread=2.0
+            )
             # keep trees on the ground
             pos[2] = max(pos[2], z_base + 0.5 * canopy_r)
             if _nonoverlap_ok(pos, r_safe, points_to_avoid, min_clearance=0.8):
@@ -156,7 +213,7 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
 
         tree_idx = len([o for o in obs if o.get("render") == "tree"])
         trunk_c = _pick_from(trunk_palette, tree_idx)
-        leaf_c  = _pick_from(leaf_palette, tree_idx)
+        leaf_c = _pick_from(leaf_palette, tree_idx)
 
         obs.append(
             {
@@ -175,7 +232,6 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
             }
         )
 
-
     # Cars: parked on the ground
     for _ in range(n_cars):
         size = rng.uniform(car_min, car_max)
@@ -191,7 +247,9 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
             pos = _rand_in_box(rng, box_min, box_max)
             pos[2] = z_center
             # Prefer cars not exactly on the tree midline, so it's visually interesting
-            pos[0] = float(np.clip(pos[0] + rng.uniform(-1.5, 1.5), box_min[0], box_max[0]))
+            pos[0] = float(
+                np.clip(pos[0] + rng.uniform(-1.5, 1.5), box_min[0], box_max[0])
+            )
             if _nonoverlap_ok(pos, r_safe, points_to_avoid, min_clearance=0.8):
                 break
         else:
@@ -199,7 +257,7 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
 
         points_to_avoid.append(pos.copy())
 
-        dyn = (obs_cfg.get("dynamic") or {})
+        dyn = obs_cfg.get("dynamic") or {}
         dyn_on = bool(dyn.get("enabled", False))
 
         vel = np.zeros(3)
@@ -224,8 +282,6 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
             }
         )
 
-
-
     # Saucers: in the sky
     for _ in range(n_saucers):
         radii = rng.uniform(sau_min, sau_max)
@@ -242,7 +298,7 @@ def _scene3d_obstacles(cfg, agents_init, goals_init):
 
         points_to_avoid.append(pos.copy())
 
-        dyn = (obs_cfg.get("dynamic") or {})
+        dyn = obs_cfg.get("dynamic") or {}
         dyn_on = bool(dyn.get("enabled", False))
 
         vel = np.zeros(3)
@@ -368,14 +424,28 @@ def init_agents_and_goals(cfg, dim, n):
             lanes = init_cfg["lanes"]
             y_spacing = float(lanes["y_spacing"])
             agents_init = [
-                np.array([rng.uniform(lanes["x_min"], lanes["x_max"]), y_start + i * y_spacing, 0.0], dtype=float)
+                np.array(
+                    [
+                        rng.uniform(lanes["x_min"], lanes["x_max"]),
+                        y_start + i * y_spacing,
+                        0.0,
+                    ],
+                    dtype=float,
+                )
                 for i in range(n)
             ]
 
         if mode_goal == "mirror":
             center = np.array(init_cfg["circle"]["center"], dtype=float)
             goals_init = [
-                np.array([center[0] - (p[0] - center[0]), center[1] - (p[1] - center[1]), 0.0], dtype=float)
+                np.array(
+                    [
+                        center[0] - (p[0] - center[0]),
+                        center[1] - (p[1] - center[1]),
+                        0.0,
+                    ],
+                    dtype=float,
+                )
                 for p in agents_init
             ]
         else:
@@ -390,7 +460,10 @@ def init_agents_and_goals(cfg, dim, n):
                 else [i * y_spacing + y_start_goal for i in range(n)]
             )
             goals_init = [
-                np.array([rng.uniform(lanes["x_min"], lanes["x_max"]), ys[i], 0.0], dtype=float)
+                np.array(
+                    [rng.uniform(lanes["x_min"], lanes["x_max"]), ys[i], 0.0],
+                    dtype=float,
+                )
                 for i in range(n)
             ]
 
@@ -412,7 +485,12 @@ def init_agents_and_goals(cfg, dim, n):
         x0 = -4.0
         x1 = 4.0
 
-    agents_init = [np.array([x0, y_start + i * y_spacing, z_start], dtype=float) for i in range(n)]
-    goals_init = [np.array([x1, y_start + (n - 1 - i) * y_spacing, z_goal], dtype=float) for i in range(n)]
+    agents_init = [
+        np.array([x0, y_start + i * y_spacing, z_start], dtype=float) for i in range(n)
+    ]
+    goals_init = [
+        np.array([x1, y_start + (n - 1 - i) * y_spacing, z_goal], dtype=float)
+        for i in range(n)
+    ]
 
     return agents_init, goals_init

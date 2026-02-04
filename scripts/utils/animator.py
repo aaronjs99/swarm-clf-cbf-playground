@@ -84,9 +84,13 @@ class SwarmAnimator:
 
         # Init Centroid
         if dim == 3:
-            (self.centroid_plot,) = ax.plot([0], [0], [0], "kx", markersize=10, label="Centroid")
+            (self.centroid_plot,) = ax.plot(
+                [0], [0], [0], "kx", markersize=10, label="Centroid"
+            )
         else:
-            (self.centroid_plot,) = ax.plot([0], [0], "kx", markersize=10, label="Centroid")
+            (self.centroid_plot,) = ax.plot(
+                [0], [0], "kx", markersize=10, label="Centroid"
+            )
 
         # Init Goals
         for i, g in enumerate(goals):
@@ -103,7 +107,9 @@ class SwarmAnimator:
         if dim == 2:
             for i, a in enumerate(agents):
                 color = self.lines[i].get_color()
-                body = plt.Circle(a["pos"][:2], self.agent_radius, color=color, alpha=0.9)
+                body = plt.Circle(
+                    a["pos"][:2], self.agent_radius, color=color, alpha=0.9
+                )
                 ax.add_patch(body)
                 self.agent_body_patches.append(body)
 
@@ -172,15 +178,21 @@ class SwarmAnimator:
 
             if render == "car":
                 col = (o.get("colors") or {}).get("body", "#64748b")
-                size = np.asarray((o.get("car") or {}).get("size", [1.8, 0.9, 0.45]), dtype=float).reshape(3)
+                size = np.asarray(
+                    (o.get("car") or {}).get("size", [1.8, 0.9, 0.45]), dtype=float
+                ).reshape(3)
                 faces = _cuboid_faces(o["pos"], size)
-                poly = Poly3DCollection(faces, alpha=0.70, facecolor=col, edgecolor="none")
+                poly = Poly3DCollection(
+                    faces, alpha=0.70, facecolor=col, edgecolor="none"
+                )
                 self.ax.add_collection3d(poly)
                 self.obs_artists.append(poly)
 
             elif render == "saucer":
                 col = (o.get("colors") or {}).get("body", "#94a3b8")
-                radii = np.asarray((o.get("saucer") or {}).get("radii", [1.0, 1.0, 0.15]), dtype=float).reshape(3)
+                radii = np.asarray(
+                    (o.get("saucer") or {}).get("radii", [1.0, 1.0, 0.15]), dtype=float
+                ).reshape(3)
                 x, y, z = _ellipsoid_mesh(o["pos"], radii, nu=16, nv=10)
                 surf = self.ax.plot_surface(x, y, z, alpha=0.55, linewidth=0, color=col)
                 self.obs_artists.append(surf)
@@ -199,14 +211,24 @@ class SwarmAnimator:
                 x0, y0 = float(o["pos"][0]), float(o["pos"][1])
 
                 # cylinder trunk
-                xt, yt, zt = _cylinder_mesh((x0, y0), z_base, z_base + trunk_h, trunk_r, nu=14)
-                trunk = self.ax.plot_surface(xt, yt, zt, alpha=0.75, linewidth=0, color=trunk_col)
+                xt, yt, zt = _cylinder_mesh(
+                    (x0, y0), z_base, z_base + trunk_h, trunk_r, nu=14
+                )
+                trunk = self.ax.plot_surface(
+                    xt, yt, zt, alpha=0.75, linewidth=0, color=trunk_col
+                )
                 self.obs_artists.append(trunk)
 
                 # canopy
-                canopy_center = np.array([x0, y0, z_base + trunk_h + 0.35 * canopy_r], dtype=float)
-                xr, yr, zr = _ellipsoid_mesh(canopy_center, (canopy_r, canopy_r, 0.8 * canopy_r), nu=14, nv=10)
-                canopy = self.ax.plot_surface(xr, yr, zr, alpha=0.55, linewidth=0, color=canopy_col)
+                canopy_center = np.array(
+                    [x0, y0, z_base + trunk_h + 0.35 * canopy_r], dtype=float
+                )
+                xr, yr, zr = _ellipsoid_mesh(
+                    canopy_center, (canopy_r, canopy_r, 0.8 * canopy_r), nu=14, nv=10
+                )
+                canopy = self.ax.plot_surface(
+                    xr, yr, zr, alpha=0.55, linewidth=0, color=canopy_col
+                )
                 self.obs_artists.append(canopy)
 
             else:

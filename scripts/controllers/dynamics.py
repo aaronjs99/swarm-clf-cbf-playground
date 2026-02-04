@@ -52,7 +52,9 @@ class SwarmController:
         rng_seed = int(dget(cfg, "controller.mpc.rng_seed", 0))
 
         dt_cfg = dget(cfg, "controller.mpc.dt", None)
-        dt_use = float(dt_cfg) if dt_cfg is not None else float(dget(cfg, "sim.dt", 0.02))
+        dt_use = (
+            float(dt_cfg) if dt_cfg is not None else float(dget(cfg, "sim.dt", 0.02))
+        )
 
         self.mpc_stride = int(dget(cfg, "controller.mpc.stride", 15))
         self.mpc_blend = float(dget(cfg, "controller.mpc.blend", 0.2))

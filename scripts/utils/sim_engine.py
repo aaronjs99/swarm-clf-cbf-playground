@@ -37,7 +37,9 @@ def run_simulation(cfg, ctrl):
 
     dt = float(sim_cfg["dt"])
     record = bool(cfg["viz"]["record"])
-    sub_steps = int(sim_cfg["substeps"]["record"] if record else sim_cfg["substeps"]["live"])
+    sub_steps = int(
+        sim_cfg["substeps"]["record"] if record else sim_cfg["substeps"]["live"]
+    )
 
     goal_delta = float(term_cfg["goal_delta"])
     settle_seconds = float(term_cfg["settle_seconds"])
@@ -91,8 +93,12 @@ def run_simulation(cfg, ctrl):
         if walls_cfg.get("enabled", False):
             w = walls_cfg
             xx, yy = np.meshgrid([w["x_min"], w["x_max"]], [w["y_min"], w["y_max"]])
-            ax.plot_surface(xx, yy, np.full_like(xx, w.get("z_min", 0.0)), alpha=0.05, color="k")
-            ax.plot_surface(xx, yy, np.full_like(xx, w.get("z_max", 10.0)), alpha=0.05, color="k")
+            ax.plot_surface(
+                xx, yy, np.full_like(xx, w.get("z_min", 0.0)), alpha=0.05, color="k"
+            )
+            ax.plot_surface(
+                xx, yy, np.full_like(xx, w.get("z_max", 10.0)), alpha=0.05, color="k"
+            )
 
         # A nicer default 3D view
         ax.view_init(elev=18, azim=-55)
@@ -115,7 +121,18 @@ def run_simulation(cfg, ctrl):
 
     def all_agents_within_delta():
         for a in agents:
-            d = np.linalg.norm(a["pos"][:dim] - goals_init[int(np.clip(len(a.get("path", [])) >= 0, 0, 1)) * 0][:dim]) if False else np.linalg.norm(a["pos"][:dim] - a.get("goal_seq", [a["goal"]])[-1][:dim])
+            d = (
+                np.linalg.norm(
+                    a["pos"][:dim]
+                    - goals_init[int(np.clip(len(a.get("path", [])) >= 0, 0, 1)) * 0][
+                        :dim
+                    ]
+                )
+                if False
+                else np.linalg.norm(
+                    a["pos"][:dim] - a.get("goal_seq", [a["goal"]])[-1][:dim]
+                )
+            )
             if d > goal_delta:
                 return False
         return True
