@@ -8,40 +8,26 @@ This repo is designed for rapid experimentation: tweak the controller, add const
 
 ## Why this exists
 
-- A **CLF-like nominal controller (PD with goal fading)** drives agents toward their goals.
-- **CBF (ECBF, relative degree 2)** prevents collisions with obstacles, walls, and other agents.
-- A small **QP (quadratic program)** resolves the “go fast vs do not crash” conflict each timestep.
-- An optional **sampling MPC layer** provides longer-horizon intent while the **CBF-QP enforces safety**.
-
-The result is goal-directed behavior with provable-style safety constraints inside a simulation harness that is easy to extend.
+- **Safety-First Control**: A core **CBF-QP (ECBF)** layer ensures zero collisions by projecting nominal actions into the safe set.
+- **Distributed Coordination**: Implements **ADMM-based trajectory negotiation** for swarm-wide consensus without a central controller.
+- **Robustness**: Supports **Adaptive GP-CBFs** to learn and compensate for unmodeled dynamics like drag and actuator lag.
+- **RL Sandbox**: Easily swap nominal policies for Deep RL agents (PPO/SAC) using the built-in safety shield.
 
 ---
 
 ## Features
 
-- **2D and 3D simulation**
-- **Multi-agent swarm support** with inter-agent collision avoidance
-- **Dynamic obstacles** with bouncing sphere physics
-- **Live animation** (default) or **record-to-video** (`--record`, writes `media/swarm_{2,3}d.mp4`)
-- **Headless-safe recording**: automatically switches to `Agg` backend and records if no display is detected
-- **Safety logging and certificate plots** (barrier values, connectivity, QP slack)
-- **QP-based controller** powered by `cvxopt`
-- **Agent dynamics realism**, including:
-  - actuator lag
-  - linear drag
-  - velocity limits
-  - optional acceleration noise
-  - gravity in 3D (with controller compensation)
+- **Distributed MPC (DMPC)**: Trajectory negotiation over a horizon $H$ using OSQP and ADMM.
+- **Adaptive Safety**: Gaussian Process (GP) residual learning for high-fidelity safety certificates.
+- **Agent Realism**: Actuator lag, linear drag, and stochastic noise modeling.
+- **2D/3D Scenarios**: Pre-configured environments from lane-swaps to 3D obstacle corridors.
+- **Headless Visualization**: Automated recording to `media/` using `Agg` backend for remote server training.
 
 ### Optional Controller Modules
-
-Configured in `config/controller/*.yaml` and included via experiment configs:
-
-- **Sampling MPC planner** → `controller.mpc.enabled`
-- **Connectivity maintenance** → `controller.connectivity.enabled`
-- **Braking-distance viability filter** → `controller.braking.enabled`
-- **ADMM-style distributed solver (experimental)** → `controller.admm.enabled`
-- **QP slack tuning** → `controller.qp.slack_weight`
+- **DMPC Layer**: Enable via `controller.mpc.enabled` for horizon-based planning.
+- **GP-CBF Shield**: Risk-aware safety margins based on predictive uncertainty.
+- **Connectivity Policy**: Spectral graph methods for maintaining swarm topology.
+- **PPO RL Agent**: Safe reinforcement learning with differentiable CBF layers.
 
 ---
 
@@ -50,6 +36,8 @@ Configured in `config/controller/*.yaml` and included via experiment configs:
 ### 1. Installation
 
 ```bash
+git clone [https://github.com/aaronjs/swarm-clf-cbf-playground.git](https://github.com/aaronjs/swarm-clf-cbf-playground.git)
+cd swarm-clf-cbf-playground
 python3 -m venv .venv
 source .venv/bin/activate
 pip install numpy matplotlib pyyaml cvxopt
@@ -69,12 +57,29 @@ python run.py --config config/experiment/default.yaml
 
 **3D Scenario (Box):**
 ```bash
-python run.py --config config/experiment/3d_default.yaml --dim 3d
+python run.py \
+       --config config/experiment/3d_default.yaml \
+       --dim 3d
 ```
 
 **Override config values from the CLI:**
 ```bash
-python run.py   --config config/experiment/default.yaml   --set     sim.termination.max_frames=500     controller.cbf.buffer_obstacles=0.2
+python run.py \
+       --config config/experiment/default.yaml \
+       --set sim.termination.max_frames=500 controller.cbf.buffer_obstacles=0.2
+```
+
+**Negotiated 3D Swarm (DMPC):**
+```bash
+python run.py \
+       --config config/experiment/3d_default.yaml \
+       --dim 3d \
+       --set controller.mpc.enabled=true
+```
+
+**Train Safe RL Agent:**
+```bash
+python scripts/rl/train.py --config config/experiment/default.yaml --episodes 500
 ```
 
 ---
@@ -82,97 +87,45 @@ python run.py   --config config/experiment/default.yaml   --set     sim.terminat
 ## CLI Reference
 
 ```
-python run.py --config <experiment.yaml> [options]
+python run.py --config <path_to_config> [options]
 ```
 
 **Options:**
 
-- `--dim {2d,3d}`  
-  Override visualization dimension.
+- `--config <path>`
+  Path to the experiment YAML file. (Default: config/experiment/default.yaml)
 
-- `--record`  
-  Force video recording instead of live animation.
+- `--dim {2d, 3d}`
+  Override the visualization and simulation dimension.
 
-- `--dynamic`  
-  Force dynamic obstacles on regardless of config.
+- `--num_agents <int>`
+  Set the number of agents in the swarm. Overrides agents.num_agents.
 
-- `--num_agents N`  
-  Override `agents.num_agents`.
+- `--num_obs <int>`
+  Set the number of obstacles. Overrides world.obstacles.num_override.
 
-- `--num_obs N`  
-  Override `world.obstacles.num_override`.
+- `--dynamic`
+  Enable dynamic movement for obstacles. Sets world.obstacles.dynamic.enabled to True.
 
-- `--safety_plot true|false`  
-  Toggle the post-simulation safety certificate plot.
+- `--record`
+  Force the simulation to save a video file to media/ instead of showing a live window. Sets viz.record to True.
 
-- `--backend {TkAgg, Qt5Agg, Agg}`  
-  Select the matplotlib backend.
+- `--safety_plot {true, false, yes, no, 1, 0}`
+  Toggle the post-simulation safety certificate plot (barrier values, connectivity, and slack).
 
-- `--set key=value ...`  
-  Apply dotted-key overrides into the merged YAML config.
+- `--backend <string>`
+  Select the Matplotlib backend (e.g., TkAgg, Qt5Agg, Agg). Note: If no DISPLAY environment variable is detected, the script automatically falls back to Agg and enables --record.
+
+- `--set key=value ...`
+  Inject arbitrary dotted-key overrides directly into the configuration dictionary. Supports int, float, and bool scalars.
 
 Example:
 
 ```bash
-python run.py   --config config/experiment/default.yaml   --set sim.dt=0.01 controller.mpc.enabled=true
+python run.py \
+       --config config/experiment/default.yaml \
+       --set sim.dt=0.01 controller.mpc.enabled=true
 ```
-
----
-
-## Modular Configuration
-
-The configuration system is fully compositional and uses YAML includes.
-
-```
-config/
-├── sim/           # timestep, termination, realism dynamics
-├── viz/           # live vs record backends, safety plot
-├── world/         # scenario definitions (2D lanes, 3D box)
-├── controller/    # nominal, CBF, MPC, connectivity, solver
-└── experiment/    # entry-point configs that compose the above
-```
-
-Example `config/experiment/default.yaml`:
-
-```yaml
-include:
-  - ../sim/default.yaml
-  - ../viz/live.yaml
-  - ../world/2d_lanes.yaml
-  - ../controller/nominal.yaml
-  - ../controller/cbf.yaml
-  - ../controller/mpc.yaml
-  - ../controller/connectivity.yaml
-  - ../controller/solver.yaml
-```
-
-This structure makes it easy to create new scenarios by mixing and matching components without duplicating configuration.
-
----
-
-## Modular Architecture
-
-Designed for plug-and-play experimentation:
-
-**Controllers**
-```
-scripts/controllers/
-├── policies/        # nominal motion, connectivity
-├── constraints/     # CBF builders and aggregation
-├── solvers/         # QP + ADMM wrapper
-└── mpc_layer.py     # sampling-based planner
-```
-
-**Simulation Utilities**
-```
-scripts/utils/
-├── stepper.py       # physics integration (no visualization)
-├── animator.py      # matplotlib visualization
-├── logger.py        # safety metric logging
-└── sim_engine.py    # orchestration
-```
-
-The separation between nominal control, constraints, and solvers allows new control strategies to be added with minimal coupling.
 
 ---
 
