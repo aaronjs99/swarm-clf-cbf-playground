@@ -17,7 +17,18 @@ class SolverWrapper:
 
         self.last_delta = 0.0
 
-    def solve(self, u_nom, constraints, agent_idx, state_manager, network):
+    def solve(
+        self,
+        u_nom,
+        constraints,
+        agent_idx,
+        state_manager,
+        network,
+        mpc_solver=None,  # NEW
+        x=None,
+        v=None,
+        goal=None,
+    ):
         qp_prob = self.translator.translate(u_nom, constraints)
 
         if self.use_admm:
@@ -35,6 +46,10 @@ class SolverWrapper:
                 fallback_zero_on_fail=qp_prob["fallback_zero_on_fail"],
                 G_hard=qp_prob["G_hard"],
                 b_hard=qp_prob["b_hard"],
+                mpc_solver=mpc_solver,  # NEW
+                x=x,  # NEW
+                v=v,  # NEW
+                goal=goal,  # NEW
             )
         else:
             u_opt, delta = solve_qp_safe(
