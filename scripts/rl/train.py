@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import torch
 import sys
+from datetime import datetime
 
 # Ensure scripts is in path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -19,8 +20,22 @@ def main():
     parser.add_argument("--max_steps", type=int, default=500)
     parser.add_argument("--save_interval", type=int, default=50)
     parser.add_argument("--out_dir", type=str, default="data/rl_models")
+    parser.add_argument("--resume", type=str, default=None, help="Path to existing model directory to resume training")
     parser.add_argument("--plot", action="store_true", help="Plot at the end")
     args = parser.parse_args()
+
+    # Handle output directory
+    if args.resume:
+        if not os.path.isdir(args.resume):
+            print(f"Error: Resume directory {args.resume} does not exist.")
+            sys.exit(1)
+        args.out_dir = args.resume
+        print(f"Resuming training in {args.out_dir}")
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        args.out_dir = os.path.join(args.out_dir, f"run_{timestamp}")
+        os.makedirs(args.out_dir, exist_ok=True)
+        print(f"Starting new training run in {args.out_dir}")
 
     cfg = load_config(args.config)
     
@@ -34,8 +49,6 @@ def main():
     print(f"Obs Dim: {env.observation_dim}, Action Dim: {env.action_dim}")
     
     agent = PPOAgent(env.observation_dim, env.action_dim)
-    
-    os.makedirs(args.out_dir, exist_ok=True)
     
     # State tracking for resume
     start_ep = 0
