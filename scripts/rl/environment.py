@@ -117,6 +117,12 @@ class SwarmRLWrapper:
             agent_idx,
             self.ctrl.state_manager,
             self.ctrl.connectivity_policy.network,
+            mpc_solver=getattr(self.ctrl, "mpc", None), # Safe access if mpc not init
+            x=a["pos"],
+            v=a["vel"],
+            goal=a["goal"],
+            threats=threats,
+            is_2d=(self.dim == 2)
         )
         
         # 3. Physics Step
