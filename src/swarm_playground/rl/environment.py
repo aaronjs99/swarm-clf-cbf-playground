@@ -243,40 +243,27 @@ class SwarmRLWrapper:
         return np.array(obs_vec, dtype=np.float32)
 
     def _compute_reward(self, agent, u_rl, u_safe, delta):
-        # 1. Goal Progress
-        dist_goal = np.linalg.norm(agent["pos"] - agent["goal"])
-        r_goal = -dist_goal
+        current_dist = np.linalg.norm(agent["pos"] - agent["goal"])
 
-        # 2. Safety Intervention Penalty
-        # If u_safe is very different from u_rl, we penalize
-        # intervene_diff = np.linalg.norm(u_safe - u_rl)
-        # r_intervene = -1.0 * intervene_diff
+        # 1. Potential-based Progress (The primary signal)
+        # We use agent_idx 0 specifically for single-agent training
+        prev_dist = getattr(self, "_prev_dist_0", current_dist)
+        r_progress = (prev_dist - current_dist) * 150.0  # Increased multiplier
+        self._prev_dist_0 = current_dist
 
-        # Better: Uses the solver's delta (slack)?
-        # Or just the L2 norm of the modification
+        # 2. Safety Intervention Penalty (Keeps it safe)
         modification = np.linalg.norm(u_safe - u_rl)
         r_mod = -0.5 * (modification**2)
 
-        # 3. Collision Penalty (Ultimate Fail)
-        r_coll = 0.0
-        for o in self.obs:
-            p_o = np.asarray(o["pos"])
-            dist = np.linalg.norm(self.agents[0]["pos"] - p_o)
-            radius = float(o.get("r", 0.5)) if o.get("kind") != "wall" else 0.0
-            if dist < radius + float(self.cfg["controller"]["cbf"]["agent_radius"]):
-                r_coll = -1000.0
-                break
+        # 3. Success Bonus (The destination signal)
+        r_success = 2000.0 if current_dist < 0.2 else 0.0
 
-        # 4. Sparse Goal Reward
-        r_success = 0.0
-        if dist_goal < 0.2:
-            r_success = 100.0
-
-        # 5. Energy Penalty
+        # 4. Energy/Efficiency Penalty
         r_energy = -0.01 * np.linalg.norm(u_safe) ** 2
 
-        total = r_goal + r_mod + r_coll + r_success + r_energy
-        return total, {"dist_goal": dist_goal, "mod": modification}
+        # TOTAL (Notice r_goal is removed)
+        total = r_progress + r_mod + r_success + r_energy
+        return total, {"dist_goal": current_dist, "mod": modification}
 
     def _is_done(self, agent):
         dist_goal = np.linalg.norm(agent["pos"] - agent["goal"])

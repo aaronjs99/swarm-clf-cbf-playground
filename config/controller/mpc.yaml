@@ -4,7 +4,7 @@ controller:
     stride: 15
     blend: 0.2
     disable_dist: 0.5
-    horizon_steps: 10
+    horizon_steps: 5
     num_samples: 32
     goal_weight: 5.0
     effort_weight: 0.02

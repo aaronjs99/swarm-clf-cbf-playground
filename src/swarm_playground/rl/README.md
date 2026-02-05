@@ -15,19 +15,19 @@ This directory contains the implementation of Safe Reinforcement Learning using 
 ### Start Fresh Training
 To start a new training run:
 ```bash
-python scripts/rl/train.py
+python src/swarm_playground/rl/train.py
 ```
 
 ### Training with Real-time Visualization
 To monitor the training progress with plots:
 ```bash
-python scripts/rl/train.py --plot
+python src/swarm_playground/rl/train.py --plot
 ```
 
 ### Resume Training
 To continue training from a specific timestamped directory:
 ```bash
-python scripts/rl/train.py --resume data/rl_models/run_YYYYMMDD_HHMMSS --episodes 1000
+python src/swarm_playground/rl/train.py --resume data/rl_models/run_YYYYMMDD_HHMMSS --episodes 1000
 ```
 *Note: Replace `run_YYYYMMDD_HHMMSS` with your actual run directory.*
 
@@ -36,13 +36,13 @@ python scripts/rl/train.py --resume data/rl_models/run_YYYYMMDD_HHMMSS --episode
 ### Evaluate Latest Model
 To evaluate the final model from a specific run:
 ```bash
-python scripts/rl/evaluate.py --model_dir data/rl_models/run_YYYYMMDD_HHMMSS
+python src/swarm_playground/rl/evaluate.py --model_dir data/rl_models/run_YYYYMMDD_HHMMSS
 ```
 
 ### Evaluate Specific Checkpoint
 To evaluate an early or intermediate checkpoint (e.g., episode 0 or 50):
 ```bash
-python scripts/rl/evaluate.py --model_dir data/rl_models/run_YYYYMMDD_HHMMSS --checkpoint 50
+python src/swarm_playground/rl/evaluate.py --model_dir data/rl_models/run_YYYYMMDD_HHMMSS --checkpoint 50
 ```
 
 ## Logging and Artifacts

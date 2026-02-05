@@ -1,6 +1,6 @@
 controller:
   qp:
-    slack_weight: 1.0e5
+    slack_weight: 2.5e5
     fallback_zero_on_fail: true
 
   admm:

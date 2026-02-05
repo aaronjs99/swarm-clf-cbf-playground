@@ -21,8 +21,8 @@ def _pick_backend(cli_backend, cfg_backend):
     return "TkAgg"
 
 
-# Ensure scripts is in path
-sys.path.append(os.path.join(os.path.dirname(__file__), "scripts"))
+# Ensure src/swarm_playground is in path
+sys.path.append(os.path.join(os.path.dirname(__file__), "src/swarm_playground"))
 
 from utils.config import load_config, set_by_dotted_key
 

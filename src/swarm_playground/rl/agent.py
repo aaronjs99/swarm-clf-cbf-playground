@@ -67,16 +67,40 @@ class PPOAgent:
     """
 
     def __init__(
-        self, obs_dim, action_dim, lr=3e-4, gamma=0.99, eps_clip=0.2, k_epochs=4
+        self,
+        obs_dim,
+        action_dim,
+        lr=3e-4,
+        gamma=0.99,
+        eps_clip=0.2,
+        k_epochs=4,
+        ent_coeff=0.05,
+        lr_decay_episodes=500,
+        lr_final=1e-5,
+        lr_step=0,
     ):
         self.gamma = gamma
         self.eps_clip = eps_clip
         self.k_epochs = k_epochs
+        self.ent_coeff = ent_coeff
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.policy = ActorCritic(obs_dim, action_dim).to(self.device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
+        for group in self.optimizer.param_groups:
+            group.setdefault("initial_lr", group["lr"])
+
+        # LR Decay: from 3e-4 to 1e-5 over next 500 episodes
+        # start_factor=1.0 means it starts at initial lr (3e-4)
+        # end_factor is the multiplier for the final lr
+        self.scheduler = optim.lr_scheduler.LinearLR(
+            self.optimizer,
+            start_factor=1.0,
+            end_factor=lr_final / lr,
+            total_iters=lr_decay_episodes,
+            last_epoch=lr_step - 1,
+        )
 
         self.buffer = []
 
@@ -84,6 +108,10 @@ class PPOAgent:
         state = torch.FloatTensor(obs).to(self.device)
         action, action_log_prob, value = self.policy.act(state)
         return action.cpu().numpy(), action_log_prob.cpu().numpy(), value.detach()
+
+    def reset_exploration(self, std_val=0.4):
+        with torch.no_grad():
+            self.policy.log_std.fill_(np.log(std_val))
 
     def store(self, transition):
         # transition: (obs, action, log_prob, reward, done, value)
@@ -129,6 +157,7 @@ class PPOAgent:
         returns = (returns - returns.mean()) / (returns.std() + 1e-7)
 
         # Optimize Policy for K epochs
+        avg_entropy = 0
         for _ in range(self.k_epochs):
             # Evaluating old actions and values
             log_probs, state_values, dist_entropy = self.policy.evaluate(
@@ -151,7 +180,7 @@ class PPOAgent:
             loss = (
                 -torch.min(surr1, surr2)
                 + 0.5 * nn.MSELoss()(state_values, returns)
-                - 0.01 * dist_entropy
+                - self.ent_coeff * dist_entropy
             )
 
             # Backprop
@@ -159,4 +188,14 @@ class PPOAgent:
             loss.mean().backward()
             self.optimizer.step()
 
+            avg_entropy += dist_entropy.mean().item()
+
+        avg_entropy /= self.k_epochs
+        current_lr = self.optimizer.param_groups[0]["lr"]
+
+        # Update LR
+        self.scheduler.step()
+
         self.buffer = []
+
+        return current_lr, avg_entropy

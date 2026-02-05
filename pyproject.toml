@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarm_playground"
+version = "0.2.0"
+authors = [
+  { name="Aaron John Sabu" },
+]
+description = "Safe multi-agent navigation with Distributed MPC, Adaptive GP-CBFs, and PPO."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Robotics",
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "cvxopt",
+    "pyyaml",
+    "torch",
+    "scikit-learn",
+    "osqp",
+    "scipy"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+swarm-run = "swarm_playground.run:main"
+swarm-train = "swarm_playground.rl.train:main"

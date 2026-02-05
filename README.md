@@ -79,7 +79,7 @@ python run.py \
 
 **Train Safe RL Agent:**
 ```bash
-python scripts/rl/train.py --config config/experiment/default.yaml --episodes 500
+python src/swarm_playground/rl/train.py --config config/experiment/default.yaml --episodes 500
 ```
 
 ---

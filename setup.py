@@ -1,12 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
-setup(
-    name="clf_cbf_nav",
-    version="0.2.0",
-    author="Aaron John Sabu",
-    description="A library for CLF-CBF based robotic navigation",
-    package_dir={"": "scripts"},
-    packages=find_packages(where="scripts"),
-    install_requires=["numpy", "matplotlib", "cvxopt", "pyyaml"],
-    python_requires=">=3.8",
-)
+if __name__ == "__main__":
+    setup()

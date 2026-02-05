@@ -5,7 +5,7 @@ import torch
 import sys
 from datetime import datetime
 
-# Ensure scripts is in path
+# Ensure src/swarm_playground is in path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from utils.config import load_config
@@ -26,6 +26,12 @@ def main():
         type=str,
         default=None,
         help="Path to existing model directory to resume training",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Specific checkpoint .pth filename (inside resume dir) to overwrite from",
     )
     parser.add_argument("--plot", action="store_true", help="Plot at the end")
     args = parser.parse_args()
@@ -52,30 +58,72 @@ def main():
     env = SwarmRLWrapper(cfg)
     logger = TrainingLogger(args.out_dir)
 
-    print(f"Obs Dim: {env.observation_dim}, Action Dim: {env.action_dim}")
+    # Truncate logs if a specific checkpoint is requested
+    if args.checkpoint:
+        import re
 
-    agent = PPOAgent(env.observation_dim, env.action_dim)
+        # Try to extract episode number from filename (e.g., ppo_model_450.pth)
+        match = re.search(r"(\d+)", args.checkpoint)
+        if match:
+            last_ep = int(match.group(1))
+            print(
+                f"Overwriting training from episode {last_ep} using {args.checkpoint}"
+            )
+            logger.truncate(last_ep)
+        else:
+            print(
+                f"Warning: Could not parse episode from checkpoint name {args.checkpoint}"
+            )
+
+    print(f"Obs Dim: {env.observation_dim}, Action Dim: {env.action_dim}")
 
     # State tracking for resume
     start_ep = 0
+    lr_step = 0
     # Attempt to resume from existing log file
     if os.path.exists(logger.episode_log_path):
+        import csv
+
         with open(logger.episode_log_path, "r") as f:
-            start_ep = sum(1 for line in f) - 1  # minus header
-            if start_ep < 0:
-                start_ep = 0
+            reader = csv.reader(f)
+            header = next(reader, None)
+            rows = list(reader)
+            start_ep = len(rows)
+
+            if header and "lr" in header and "entropy" in header:
+                idx_lr = header.index("lr")
+                idx_ent = header.index("entropy")
+                # Count consecutive rows from the end that have new metrics
+                for row in reversed(rows):
+                    if (
+                        len(row) > max(idx_lr, idx_ent)
+                        and row[idx_lr].strip()
+                        and row[idx_ent].strip()
+                    ):
+                        lr_step += 1
+                    else:
+                        break
+
+    print(f"Resuming: start_ep={start_ep}, lr_step={lr_step}")
+
+    agent = PPOAgent(env.observation_dim, env.action_dim, lr_step=lr_step)
 
     # Load existing model if available to support resume
     if start_ep > 0:
-        model_path = os.path.join(args.out_dir, "ppo_model_final.pth")
-        if not os.path.exists(model_path):
-            model_path = os.path.join(args.out_dir, "ppo_model_best.pth")
+        if args.checkpoint:
+            model_path = os.path.join(args.out_dir, args.checkpoint)
+        else:
+            model_path = os.path.join(args.out_dir, "ppo_model_final.pth")
+            if not os.path.exists(model_path):
+                model_path = os.path.join(args.out_dir, "ppo_model_best.pth")
 
         if os.path.exists(model_path):
             print(f"Loading model from {model_path}")
             agent.policy.load_state_dict(
                 torch.load(model_path, map_location=agent.device, weights_only=True)
             )
+            agent.reset_exploration(std_val=0.4)
+            print("Exploration noise reset to 0.4 for re-learning.")
         else:
             print(
                 f"Warning: Resuming from episode {start_ep} but no model found at {model_path}"
@@ -105,9 +153,11 @@ def main():
             if done:
                 break
 
-        agent.update()
-        logger.log_episode(ep, episode_reward, step)
-        print(f"Episode {ep}: Reward = {episode_reward:.2f}, Steps = {step}")
+        lr, entropy = agent.update()
+        logger.log_episode(ep, episode_reward, step, lr, entropy)
+        print(
+            f"Episode {ep}: Reward = {episode_reward:.2f}, Steps = {step}, LR = {lr:.2e}, Entropy = {entropy:.4f}"
+        )
 
         if ep % args.save_interval == 0:
             torch.save(agent.policy.state_dict(), f"{args.out_dir}/ppo_model_{ep}.pth")
