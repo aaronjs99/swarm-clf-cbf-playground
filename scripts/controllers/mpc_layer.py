@@ -121,7 +121,7 @@ class DMPCOptimizer:
 
         self.Mu_p = sparse.csc_matrix(self.Mu[self.pos_indices, :])
         self.Mx_p = sparse.csc_matrix(self.Mx[self.pos_indices, :])
-        
+
         # Pre-compute fixed part of Hessian for performance
         # P_track_base = 2 * goal_w * Mu_p^T Mu_p
         self.P_track_base = 2.0 * self.goal_w * (self.Mu_p.T @ self.Mu_p)
@@ -144,35 +144,35 @@ class DMPCOptimizer:
         """
         num_u = self.H * self.nu
         x_init = np.concatenate([x0, v0])
-        
+
         # 1. Hessian P and Gradient q
         # Hessian P is constant for a fixed rho/effort_w
         I_nu = sparse.eye(num_u, format="csc")
         P = self.P_track_base + 2.0 * (self.effort_w + self.rho) * I_nu
-        
+
         if u_nom is not None:
-             # Add nominal bias weight to P and q
-             w_nom = 20.0 
-             # Note: For speed we only modify the first 3x3 block
-             # We can't easily modify CSC P once built, but we can add another sparse matrix
-             # However, adding matrices is slow. Let's just keep P part constant if possible.
-             # If we MUST have the P_u[0:3, 0:3] modification:
-             pass 
+            # Add nominal bias weight to P and q
+            w_nom = 20.0
+            # Note: For speed we only modify the first 3x3 block
+            # We can't easily modify CSC P once built, but we can add another sparse matrix
+            # However, adding matrices is slow. Let's just keep P part constant if possible.
+            # If we MUST have the P_u[0:3, 0:3] modification:
+            pass
 
         # Gradient q
         G_ref = np.tile(goal, self.H)
         E = self.Mx_p @ x_init - G_ref
         q = 2.0 * self.goal_w * (E.T @ self.Mu_p).flatten()
-        
+
         if z_traj is not None and y_traj is not None:
             Ref = (z_traj - y_traj).reshape(-1)
             q -= 2.0 * self.rho * Ref
-            
+
         if u_nom is not None:
-             # Nominal bias w_nom should be balanced with goal_w and rho.
-             # Reduced to 2.0 to prevent aggressive initial transients.
-             w_nom = 2.0 
-             q[0:3] -= w_nom * u_nom
+            # Nominal bias w_nom should be balanced with goal_w and rho.
+            # Reduced to 2.0 to prevent aggressive initial transients.
+            w_nom = 2.0
+            q[0:3] -= w_nom * u_nom
 
         # 2. Constraints
         # Control Limits
@@ -181,24 +181,24 @@ class DMPCOptimizer:
         if is_2d:
             l_box[2::3] = 0.0
             u_box[2::3] = 0.0
-            
+
         # Collision Constraints
         A_col_list = []
         l_col_list = []
-        
+
         U_lin = z_traj.reshape(-1) if z_traj is not None else np.zeros(num_u)
         P_lin_vec = self.Mx_p @ x_init + self.Mu_p @ U_lin
         P_lin = P_lin_vec.reshape(self.H, 3)
-        
+
         d_min_agent = 1.4  # Radius (0.6) + Radius (0.6) + small buffer
-        d_min_obs = 1.0    # Radius (0.6) + small buffer (obstacle radius added below)
-        scan_dist = 4.0    # Increased scan dist for better foresight
-        
+        d_min_obs = 1.0  # Radius (0.6) + small buffer (obstacle radius added below)
+        scan_dist = 4.0  # Increased scan dist for better foresight
+
         for k in range(self.H):
             p_self = P_lin[k]
-            Mu_k = self.Mu_p[3*k : 3*k+3, :]
-            p_const = (self.Mx_p @ x_init)[3*k : 3*k+3]
-            
+            Mu_k = self.Mu_p[3 * k : 3 * k + 3, :]
+            p_const = (self.Mx_p @ x_init)[3 * k : 3 * k + 3]
+
             # Neighbors
             for neigh_traj in neighbors_pred:
                 if k < len(neigh_traj):
@@ -207,7 +207,7 @@ class DMPCOptimizer:
                         n = (p_self - neigh_traj[k]) / (dist + 1e-6)
                         A_col_list.append(sparse.csc_matrix(n @ Mu_k))
                         l_col_list.append(d_min_agent + n @ (neigh_traj[k] - p_const))
-            
+
             # Threats
             for t in threats:
                 if t.get("kind") == "sphere":
@@ -215,9 +215,11 @@ class DMPCOptimizer:
                     if dist < scan_dist:
                         n = (p_self - t["pos"]) / (dist + 1e-6)
                         A_col_list.append(sparse.csc_matrix(n @ Mu_k))
-                        # t.get("r", 0.1) is obstacle radius. 
+                        # t.get("r", 0.1) is obstacle radius.
                         # We need agent_radius(0.6) + obstacle_radius + buffer
-                        l_col_list.append(d_min_obs + t.get("r", 0.1) + n @ (t["pos"] - p_const))
+                        l_col_list.append(
+                            d_min_obs + t.get("r", 0.1) + n @ (t["pos"] - p_const)
+                        )
                 elif t.get("kind") == "wall":
                     n = np.asarray(t["normal"])
                     A_col_list.append(sparse.csc_matrix(n @ Mu_k))
@@ -226,30 +228,37 @@ class DMPCOptimizer:
         num_col = len(A_col_list)
         if num_col > 0:
             w_slack = 1e5
-            P_final = sparse.block_diag([P, 2.0 * w_slack * sparse.eye(num_col, format="csc")], format="csc")
+            P_final = sparse.block_diag(
+                [P, 2.0 * w_slack * sparse.eye(num_col, format="csc")], format="csc"
+            )
             q_final = np.concatenate([q, np.zeros(num_col)])
-            
+
             A_col_mat = sparse.vstack(A_col_list, format="csc")
             I_u = sparse.eye(num_u, format="csc")
             I_s = sparse.eye(num_col, format="csc")
             Z_us = sparse.csc_matrix((num_u, num_col))
             Z_su = sparse.csc_matrix((num_col, num_u))
 
-            A_final = sparse.vstack([
-                sparse.hstack([I_u, Z_us]),
-                sparse.hstack([A_col_mat, I_s]),
-                sparse.hstack([Z_su, I_s])
-            ], format="csc")
-            
+            A_final = sparse.vstack(
+                [
+                    sparse.hstack([I_u, Z_us]),
+                    sparse.hstack([A_col_mat, I_s]),
+                    sparse.hstack([Z_su, I_s]),
+                ],
+                format="csc",
+            )
+
             l_final = np.concatenate([l_box, l_col_list, np.zeros(num_col)])
-            u_final = np.concatenate([u_box, np.inf * np.ones(num_col), np.inf * np.ones(num_col)])
+            u_final = np.concatenate(
+                [u_box, np.inf * np.ones(num_col), np.inf * np.ones(num_col)]
+            )
         else:
             P_final = P
             q_final = q
             A_final = sparse.eye(num_u, format="csc")
             l_final = l_box
             u_final = u_box
-            
+
         return P_final, q_final, A_final, l_final, u_final
 
     def solve_trajectory(
@@ -275,12 +284,16 @@ class DMPCOptimizer:
         prob = osqp.OSQP()
         # Matrix conversion warning fix: ensure CSC
         prob.setup(
-            P, q, A, l, u, 
-            verbose=False, 
-            eps_abs=1e-3, 
-            eps_rel=1e-3, 
-            max_iter=1000, 
-            warm_start=True
+            P,
+            q,
+            A,
+            l,
+            u,
+            verbose=False,
+            eps_abs=1e-3,
+            eps_rel=1e-3,
+            max_iter=1000,
+            warm_start=True,
         )
         res = prob.solve()
 

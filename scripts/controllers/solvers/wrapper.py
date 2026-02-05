@@ -88,4 +88,3 @@ class SolverWrapper:
 
         self.last_delta = float(delta)
         return u_opt, delta
-
