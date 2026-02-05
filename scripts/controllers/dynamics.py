@@ -12,6 +12,7 @@ from controllers.mpc_layer import SamplingMPCPlanner
 
 from utils.config import get as dget
 from utils.geometry import as3
+from controllers.cbf.gp_learner import ResidualDynamicsGP
 
 
 class SwarmController:
@@ -75,6 +76,12 @@ class SwarmController:
         self._tick = 0
         self._mpc_cache = {}  # agent_idx -> np.ndarray(3,)
 
+        # GP Learning
+        self.dt = dt_use
+        self.gp = ResidualDynamicsGP()
+        self.gp_train_interval = 50
+        self._last_agent_state = {}  # agent_idx -> (v, u)
+
     def _d_safe_for_threat(self, threat):
         """
         Match the safety distance logic used by ConstraintBuilder so MPC's
@@ -116,6 +123,12 @@ class SwarmController:
 
         return best < self.mpc_disable_dist
 
+    def train_gp(self):
+        """
+        Triggers training of the residual dynamics GP.
+        """
+        success = self.gp.train()
+
     def compute_control(self, x, v, goal, obstacles, agent_idx, all_agents):
         """
         Computes the control input (acceleration) for a single agent.
@@ -137,6 +150,22 @@ class SwarmController:
         # 0. Topology Update
         if agent_idx == 0:
             self.connectivity_policy.update_topology(all_agents)
+
+            # Periodic GP Training
+            if self._tick > 0 and self._tick % self.gp_train_interval == 0:
+                self.train_gp()
+
+        # 0b. GP Data Collection
+        if agent_idx in self._last_agent_state:
+            v_prev, u_prev = self._last_agent_state[agent_idx]
+            # Approximate actual acceleration
+            acc_actual = (v - v_prev) / self.dt
+            # Residual: d = acc_actual - u_prev
+            d_res = acc_actual - u_prev
+
+            # Input to GP: z = [v_prev, u_prev]
+            z_in = np.concatenate([v_prev, u_prev])
+            self.gp.add_data(z_in, d_res)
 
         threats = self.constraint_builder.build_threats(
             obstacles, agent_idx, all_agents
@@ -172,7 +201,9 @@ class SwarmController:
             u_nom += u_conn
 
         # 3. Constraints
-        self.constraint_builder.add_constraints(x, v, threats, is_2d)
+        self.constraint_builder.add_constraints(
+            x, v, threats, is_2d, gp=self.gp, u_nom=u_nom
+        )
 
         # 4. Solvers
         u_opt, delta = self.solver_wrapper.solve(
@@ -193,6 +224,9 @@ class SwarmController:
             u_opt[2] = 0.0
         else:
             u_opt = u_opt + u_grav_comp
+
+        # Store state for next tick's learning
+        self._last_agent_state[agent_idx] = (v, u_opt)
 
         return u_opt
 
