@@ -127,9 +127,7 @@ class SwarmRLWrapper:
         # Or simpler: We just override the control inside physics step?
         # `physics_step` calls `ctrl.compute_control` for each agent.
         
-        # HACK: We can make a dummy controller wrapper that returns our u_safe for agent 0
-        # and calls the real controller for others.
-        
+        # Helper Controller to inject RL action for Agent 0 while keeping others nominal
         class RLOverrideController:
             def __init__(self, real_ctrl, u_override_0):
                 self.real_ctrl = real_ctrl
@@ -244,9 +242,14 @@ class SwarmRLWrapper:
         r_mod = -0.5 * (modification ** 2)
         
         # 3. Collision Penalty (Ultimate Fail)
-        # Check strict collision
         r_coll = 0.0
-        # ... TODO: check collision with obs (skipped for now, CBF should be safe)
+        for o in self.obs:
+            p_o = np.asarray(o["pos"])
+            dist = np.linalg.norm(self.agents[0]["pos"] - p_o)
+            radius = float(o.get("r", 0.5)) if o.get("kind") != "wall" else 0.0
+            if dist < radius + float(self.cfg["controller"]["cbf"]["agent_radius"]):
+                 r_coll = -1000.0
+                 break
         
         # 4. Sparse Goal Reward
         r_success = 0.0

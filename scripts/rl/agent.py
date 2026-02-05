@@ -6,6 +6,11 @@ import torch.optim as optim
 from torch.distributions import Normal
 
 class ActorCritic(nn.Module):
+    """
+    Actor-Critic Network for PPO.
+    Actor: Outputs mean of Gaussian distribution for actions.
+    Critic: Estimates Value function V(s).
+    """
     def __init__(self, obs_dim, action_dim, hidden_size=64, std=0.2):
         super(ActorCritic, self).__init__()
         
@@ -55,6 +60,9 @@ class ActorCritic(nn.Module):
         return action_log_probs, values, dist_entropy
 
 class PPOAgent:
+    """
+    Proximal Policy Optimization (PPO) Agent.
+    """
     def __init__(self, obs_dim, action_dim, lr=3e-4, gamma=0.99, eps_clip=0.2, k_epochs=4):
         self.gamma = gamma
         self.eps_clip = eps_clip

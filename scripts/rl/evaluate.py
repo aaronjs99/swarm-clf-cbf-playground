@@ -27,7 +27,7 @@ def main():
     model_path = "data/rl_models/ppo_model_best.pth"
     
     if os.path.exists(model_path):
-        agent.policy.load_state_dict(torch.load(model_path))
+        agent.policy.load_state_dict(torch.load(model_path, weights_only=True))
         print("Loaded trained model!")
     else:
         print("No model found, running with random weights (expect jitter).")
