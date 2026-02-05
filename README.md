@@ -36,11 +36,11 @@ This repo is designed for rapid experimentation: tweak the controller, add const
 ### 1. Installation
 
 ```bash
-git clone [https://github.com/aaronjs/swarm-clf-cbf-playground.git](https://github.com/aaronjs/swarm-clf-cbf-playground.git)
+git clone [https://github.com/aaronjs99/swarm-clf-cbf-playground.git](https://github.com/aaronjs99/swarm-clf-cbf-playground.git)
 cd swarm-clf-cbf-playground
 python3 -m venv .venv
 source .venv/bin/activate
-pip install numpy matplotlib pyyaml cvxopt
+pip install numpy matplotlib pyyaml cvxopt osqp scikit-learn torch
 ```
 
 **Optional (required for video recording):**

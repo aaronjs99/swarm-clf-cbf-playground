@@ -73,7 +73,9 @@ def main():
 
         if os.path.exists(model_path):
             print(f"Loading model from {model_path}")
-            agent.policy.load_state_dict(torch.load(model_path, weights_only=True))
+            agent.policy.load_state_dict(
+                torch.load(model_path, map_location=agent.device, weights_only=True)
+            )
         else:
             print(
                 f"Warning: Resuming from episode {start_ep} but no model found at {model_path}"

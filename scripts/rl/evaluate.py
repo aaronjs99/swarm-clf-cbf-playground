@@ -59,7 +59,9 @@ def main():
                 model_path = os.path.join(args.model_dir, "ppo_model_final.pth")
 
     if os.path.exists(model_path):
-        agent.policy.load_state_dict(torch.load(model_path, weights_only=True))
+        agent.policy.load_state_dict(
+            torch.load(model_path, map_location=agent.device, weights_only=True)
+        )
         print(f"Loaded trained model from {model_path}!")
     else:
         print(f"No model found at {model_path}, running with random weights.")

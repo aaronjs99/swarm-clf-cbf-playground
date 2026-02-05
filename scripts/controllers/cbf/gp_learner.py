@@ -60,7 +60,7 @@ class ResidualDynamicsGP:
         z: shape (input_dim,)
         """
         if not self.is_trained:
-            return np.zeros(3), np.zeros(3)
+            return np.zeros(3), np.zeros(1)
 
         # Reshape for sklearn (1, n_features)
         z_in = np.atleast_2d(z)
