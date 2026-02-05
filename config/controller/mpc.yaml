@@ -4,8 +4,7 @@ controller:
     stride: 15
     blend: 0.2
     disable_dist: 0.5
-    horizon_steps: 25
-    # dt: null # defaults to sim.dt
+    horizon_steps: 10
     num_samples: 32
     goal_weight: 5.0
     effort_weight: 0.02
