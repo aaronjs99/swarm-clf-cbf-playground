@@ -28,11 +28,15 @@ class SolverWrapper:
         x=None,
         v=None,
         goal=None,
+        threats=None,  # NEW
+        is_2d=False,  # NEW
     ):
         qp_prob = self.translator.translate(u_nom, constraints)
 
         if self.use_admm:
-            u_opt, delta = self.admm.step(
+            # 1. Negotiate trajectory using DMPC + ADMM
+            # This returns the first step of the negotiated plan.
+            u_negotiated, delta_admm = self.admm.step(
                 agent_id=agent_idx,
                 u_nom=u_nom,
                 P=qp_prob["P"],
@@ -46,11 +50,29 @@ class SolverWrapper:
                 fallback_zero_on_fail=qp_prob["fallback_zero_on_fail"],
                 G_hard=qp_prob["G_hard"],
                 b_hard=qp_prob["b_hard"],
-                mpc_solver=mpc_solver,  # NEW
-                x=x,  # NEW
-                v=v,  # NEW
-                goal=goal,  # NEW
+                mpc_solver=mpc_solver,
+                x=x,
+                v=v,
+                goal=goal,
+                threats=threats,
+                is_2d=is_2d,
             )
+
+            # 2. Safety Layer: Pass negotiated u through local CBF filter
+            # This guarantees instantaneous safety even if DMPC/ADMM has slack violations.
+            u_opt, delta_safe = solve_qp_safe(
+                P=qp_prob["P"],
+                q=-u_negotiated,  # Track the negotiated plan
+                G=qp_prob["G"],
+                b=qp_prob["b"],
+                a_max=self.a_max,
+                slack_weight=qp_prob["slack_weight"],
+                fallback_zero_on_fail=qp_prob["fallback_zero_on_fail"],
+                G_hard=qp_prob["G_hard"],
+                b_hard=qp_prob["b_hard"],
+            )
+            delta = delta_safe
+
         else:
             u_opt, delta = solve_qp_safe(
                 P=qp_prob["P"],
@@ -66,3 +88,4 @@ class SolverWrapper:
 
         self.last_delta = float(delta)
         return u_opt, delta
+

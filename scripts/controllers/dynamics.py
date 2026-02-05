@@ -182,9 +182,11 @@ class SwarmController:
             self.state_manager,
             self.connectivity_policy.network,
             mpc_solver=self.mpc,  # NEW: Pass DMPC object
-            x=x,                 # NEW: Pass State
-            v=v,                 # NEW: Pass Velocity
-            goal=goal,           # NEW: Pass Goal
+            x=x,  # NEW: Pass State
+            v=v,  # NEW: Pass Velocity
+            goal=goal,  # NEW: Pass Goal
+            threats=threats,  # NEW: Pass Threats
+            is_2d=is_2d,  # NEW: Pass 2D flag
         )
 
         if is_2d:

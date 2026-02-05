@@ -4,6 +4,6 @@ controller:
     fallback_zero_on_fail: true
 
   admm:
-    enabled: false
+    enabled: true
     rho: 0.1
-    iters: 3
+    iters: 2
