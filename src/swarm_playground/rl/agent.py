@@ -13,6 +13,15 @@ class ActorCritic(nn.Module):
     """
 
     def __init__(self, obs_dim, action_dim, hidden_size=64, std=0.2):
+        """
+        Initialize the Actor-Critic network.
+
+        Args:
+            obs_dim (int): Dimension of the observation space.
+            action_dim (int): Dimension of the action space.
+            hidden_size (int): Size of the hidden layers.
+            std (float): Initial standard deviation for exploration noise.
+        """
         super(ActorCritic, self).__init__()
 
         # Critic
@@ -36,10 +45,30 @@ class ActorCritic(nn.Module):
 
         self.log_std = nn.Parameter(torch.ones(action_dim) * np.log(std))
 
-    def forward(self):
-        raise NotImplementedError
+    def forward(self, obs):
+        """
+        Forward pass for the network.
+
+        Args:
+            obs (torch.Tensor): Observation tensor.
+
+        Returns:
+            tuple: (action_mean, value_estimate)
+        """
+        mean = self.actor_mean(obs)
+        val = self.critic(obs)
+        return mean, val
 
     def act(self, obs):
+        """
+        Sample an action from the policy.
+
+        Args:
+            obs (torch.Tensor): Observation tensor.
+
+        Returns:
+            tuple: (action, log_prob, value_estimate)
+        """
         mean = self.actor_mean(obs)
         std = self.log_std.exp()
         dist = Normal(mean, std)
@@ -50,6 +79,16 @@ class ActorCritic(nn.Module):
         return action.detach(), action_log_prob.detach(), self.critic(obs)
 
     def evaluate(self, obs, action):
+        """
+        Evaluate actions for PPO update.
+
+        Args:
+            obs (torch.Tensor): Observation tensor.
+            action (torch.Tensor): Action tensor.
+
+        Returns:
+            tuple: (action_log_probs, state_values, dist_entropy)
+        """
         mean = self.actor_mean(obs)
         std = self.log_std.exp()
         dist = Normal(mean, std)
@@ -79,6 +118,21 @@ class PPOAgent:
         lr_final=1e-5,
         lr_step=0,
     ):
+        """
+        Initialize the PPO Agent.
+
+        Args:
+            obs_dim (int): Dimension of observation space.
+            action_dim (int): Dimension of action space.
+            lr (float): Initial learning rate.
+            gamma (float): Discount factor.
+            eps_clip (float): PPO clipping parameter.
+            k_epochs (int): Number of epochs to update policy.
+            ent_coeff (float): Entropy coefficient.
+            lr_decay_episodes (int): Number of episodes to decay LR.
+            lr_final (float): Final learning rate after decay.
+            lr_step (int): Current step in LR schedule (for resuming).
+        """
         self.gamma = gamma
         self.eps_clip = eps_clip
         self.k_epochs = k_epochs
@@ -105,19 +159,46 @@ class PPOAgent:
         self.buffer = []
 
     def select_action(self, obs):
+        """
+        Select an action for the given observation.
+
+        Args:
+            obs (np.ndarray): Observation array.
+
+        Returns:
+            tuple: (action, log_prob, value) as numpy arrays.
+        """
         state = torch.FloatTensor(obs).to(self.device)
         action, action_log_prob, value = self.policy.act(state)
         return action.cpu().numpy(), action_log_prob.cpu().numpy(), value.detach()
 
     def reset_exploration(self, std_val=0.4):
+        """
+        Reset exploration noise standard deviation.
+
+        Args:
+            std_val (float): New standard deviation value.
+        """
         with torch.no_grad():
             self.policy.log_std.fill_(np.log(std_val))
 
     def store(self, transition):
+        """
+        Store a transition in the buffer.
+
+        Args:
+            transition (tuple): (obs, action, log_prob, reward, done, value)
+        """
         # transition: (obs, action, log_prob, reward, done, value)
         self.buffer.append(transition)
 
     def update(self):
+        """
+        Update the policy using the PPO algorithm.
+
+        Returns:
+            tuple: (current_lr, avg_entropy)
+        """
         if not self.buffer:
             return
 

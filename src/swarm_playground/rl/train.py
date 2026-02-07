@@ -1,3 +1,8 @@
+"""
+Training script for the Swarm RL Agent using PPO.
+Handles training loops, logging, checkpoints, and resuming.
+"""
+
 import os
 import argparse
 import numpy as np
@@ -15,6 +20,10 @@ from rl.rl_utils import TrainingLogger
 
 
 def main():
+    """
+    Main training loop.
+    Parses arguments, initializes environment and agent, and runs episodes.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="config/experiment/default.yaml")
     parser.add_argument("--episodes", type=int, default=1000)
@@ -34,6 +43,11 @@ def main():
         help="Specific checkpoint .pth filename (inside resume dir) to overwrite from",
     )
     parser.add_argument("--plot", action="store_true", help="Plot at the end")
+    parser.add_argument(
+        "--relearning",
+        action="store_true",
+        help="Reset exploration noise to 0.4 for re-learning (default: False)",
+    )
     args = parser.parse_args()
 
     # Handle output directory
@@ -122,8 +136,10 @@ def main():
             agent.policy.load_state_dict(
                 torch.load(model_path, map_location=agent.device, weights_only=True)
             )
-            agent.reset_exploration(std_val=0.4)
-            print("Exploration noise reset to 0.4 for re-learning.")
+            if args.relearning and not getattr(agent, "_exploration_already_reset", False):
+                agent.reset_exploration(std_val=0.4)
+                agent._exploration_already_reset = True
+                print("Exploration noise reset to 0.4 for re-learning.")
         else:
             print(
                 f"Warning: Resuming from episode {start_ep} but no model found at {model_path}"
@@ -132,6 +148,12 @@ def main():
     best_reward = -float("inf")
 
     def train_one_episode(ep):
+        """
+        Run a single training episode.
+
+        Args:
+            ep (int): Current episode number.
+        """
         nonlocal best_reward
         obs = env.reset()
         episode_reward = 0
@@ -183,13 +205,9 @@ def main():
                 )
                 if choice == "c":
                     print("Resuming...")
-                    # We accept that the current episode was interrupted and partial data might be in buffer/log.
-                    # Ideally we clear buffer for this episode.
-                    agent.buffer = []  # Clear partial trajectory
-                    # logger step buffer is flushed only on episode end usually?
-                    # No, log_step writes to buffer. logger.flush() is called in log_episode.
-                    # So detailed log might have partial steps. That's fine.
-                    # We just restart this episode index.
+                    # Interrupted episode data is discarded to keep logs clean
+                    agent.buffer = []
+                    # Restart this episode index
                     break
                 elif choice == "s":
                     current_ep = args.episodes  # Force exit

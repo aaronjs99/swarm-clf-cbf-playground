@@ -1,3 +1,8 @@
+"""
+Utilities for Reinforcement Learning training.
+Includes logging, plotting, and other helper functions.
+"""
+
 import csv
 import os
 import matplotlib.pyplot as plt
@@ -5,7 +10,17 @@ import pandas as pd
 
 
 class TrainingLogger:
+    """
+    Handles logging of training metrics to CSV files and plotting.
+    """
+
     def __init__(self, output_dir):
+        """
+        Initialize the logger.
+
+        Args:
+            output_dir (str): Directory to save logs.
+        """
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
@@ -25,6 +40,13 @@ class TrainingLogger:
         self.step_buffer = []
 
     def _ensure_header(self, path, expected_cols):
+        """
+        Ensure the CSV file has the correct header. Migrates if necessary.
+
+        Args:
+            path (str): Path to CSV file.
+            expected_cols (list): List of expected column names.
+        """
         if not os.path.exists(path):
             with open(path, "w", newline="") as f:
                 writer = csv.writer(f)
@@ -60,7 +82,12 @@ class TrainingLogger:
             print(f"Warning: Could not check/migrate log file {path}: {e}")
 
     def truncate(self, last_episode):
-        """Remove all entries after last_episode to resume from a specific checkpoint."""
+        """
+        Remove all entries after last_episode to resume from a specific checkpoint.
+
+        Args:
+            last_episode (int): The last valid episode number to keep.
+        """
         for path in [self.episode_log_path, self.step_log_path]:
             if not os.path.exists(path):
                 continue
@@ -92,13 +119,36 @@ class TrainingLogger:
                 print(f"Error truncating {path}: {e}")
 
     def log_step(self, episode, step, reward, correction, dist):
+        """
+        Log metrics for a single simulation step.
+
+        Args:
+            episode (int): Episode number.
+            step (int): Step number.
+            reward (float): Reward received.
+            correction (float): CBF correction magnitude.
+            dist (float): Distance to goal.
+        """
         self.step_buffer.append([episode, step, reward, correction, dist])
 
     def log_episode(self, episode, reward, steps, lr, entropy):
+        """
+        Log metrics for a complete episode.
+
+        Args:
+            episode (int): Episode number.
+            reward (float): Total episode reward.
+            steps (int): Total steps in episode.
+            lr (float): Current learning rate.
+            entropy (float): Average policy entropy.
+        """
         self.episode_buffer.append([episode, reward, steps, lr, entropy])
         self.flush()
 
     def flush(self):
+        """
+        Write buffered logs to disk.
+        """
         if self.episode_buffer:
             with open(self.episode_log_path, "a", newline="") as f:
                 writer = csv.writer(f)
@@ -112,6 +162,12 @@ class TrainingLogger:
             self.step_buffer = []
 
     def plot(self, show=False):
+        """
+        Plot training progress from logs.
+        
+        Args:
+            show (bool): If True, display the plot window.
+        """
         try:
             df = pd.read_csv(self.episode_log_path)
             if df.empty:

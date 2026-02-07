@@ -13,15 +13,21 @@ class SwarmRLWrapper:
     """
 
     def __init__(self, cfg):
+        """
+        Initialize the SwarmRLWrapper.
+
+        Args:
+            cfg (dict): Configuration dictionary containing simulation and controller settings.
+        """
         self.cfg = cfg
         self.dim = 3 if cfg["viz"]["dim"] == "3d" else 2
         self.dt = float(cfg["sim"]["dt"])
         self.sub_steps = int(
             cfg["sim"]["substeps"]["live"]
-        )  # Use live steps for training speed
+        )  # Use live steps for training efficiency
 
         # Override config for RL if needed
-        # We want the RL agent to control the acceleration directly
+        # The RL agent controls the acceleration directly
         self.a_max = float(
             cfg["controller"]["dim_defaults" if self.dim == 2 else "dim_defaults"][
                 "a_max_2d" if self.dim == 2 else "a_max_3d"
@@ -29,7 +35,7 @@ class SwarmRLWrapper:
         )
 
         # Controller for Safety Layer (CBF)
-        # We will use this to "shield" the RL action
+        # This is used to "shield" the RL action
         self.ctrl = SwarmController(cfg, a_max=self.a_max)
 
         # State
@@ -44,6 +50,12 @@ class SwarmRLWrapper:
         self.action_dim = 3
 
     def reset(self):
+        """
+        Reset the environment and agents to initial states.
+
+        Returns:
+            np.ndarray: Initial observation for the learning agent (agent 0).
+        """
         n = int(self.cfg["agents"]["num_agents"])
 
         # Init World
@@ -87,9 +99,14 @@ class SwarmRLWrapper:
 
     def step(self, action_rl):
         """
+        Execute one simulation step with the given action from the RL agent.
+
         Args:
-            action_rl: np.array (3,) normalized or raw acceleration?
-                       Let's assume it's raw acceleration in [-a_max, a_max]
+            action_rl (np.ndarray): RL action (acceleration) for agent 0.
+                                    Assumed to be in [-a_max, a_max].
+
+        Returns:
+            tuple: (observation, reward, done, info)
         """
         # We are training Agent 0
         agent_idx = 0
@@ -102,8 +119,7 @@ class SwarmRLWrapper:
             u_rl[2] = 0.0
 
         # 2. Safety Layer (CBF Shield)
-        # We hijack the usual flow:
-        # Instead of NominalPolicy, we treat u_rl as the nominal u.
+        # Use u_rl as the nominal control input (u_nom)
 
         # Topology Update (usually done by controller at idx 0)
         self.ctrl.connectivity_policy.update_topology(self.agents)
@@ -139,15 +155,19 @@ class SwarmRLWrapper:
         # The physics_step function iterates over ALL agents.
         # But we only computed control for Agent 0 manually.
         # For other agents, we should let them behave normally (Nominal Policy or Static).
-        # To use `physics_step`, we need to hook into `ctrl.compute_control`?
-        # Or simpler: We just override the control inside physics step?
-        # `physics_step` calls `ctrl.compute_control` for each agent.
+        # To use `physics_step`, we need to hook into `ctrl.compute_control`.
 
         # Helper Controller to inject RL action for Agent 0 while keeping others nominal
         class RLOverrideController:
+            """
+            Helper Controller to inject RL action for Agent 0 while keeping others nominal.
+            Wraps the real SwarmController.
+            """
+
             def __init__(self, real_ctrl, u_override_0):
                 self.real_ctrl = real_ctrl
                 self.u_0 = u_override_0
+                # Proxy required attributes
                 self.last_l2 = real_ctrl.last_l2
                 self.last_delta = real_ctrl.last_delta
 
@@ -177,7 +197,7 @@ class SwarmRLWrapper:
             agent_radius=float(self.cfg["controller"]["cbf"]["agent_radius"]),
             agent_dyn_cfg=agent_dyn_cfg,
             flight_cfg=(self.cfg.get("world", {}) or {}).get("flight", {}),
-            logger=None,  # No logging during training for speed?
+            logger=None,  # No logging during training for speed
             t_start=self.t,
         )
 
@@ -194,6 +214,15 @@ class SwarmRLWrapper:
         return obs, reward, done, info
 
     def _get_obs(self, idx):
+        """
+        Construct the observation vector for the agent.
+
+        Args:
+            idx (int): Agent index.
+
+        Returns:
+            np.ndarray: Observation vector.
+        """
         a = self.agents[idx]
         x = a["pos"]
         v = a["vel"]
@@ -205,9 +234,8 @@ class SwarmRLWrapper:
         dir_g = rel_g / (dist_g + 1e-6)
 
         # Nearest Obstacles
-        # For simplicity, let's just observe relative position of K nearest threats
-        # We can use the constraint builder's logic or simple distance
-
+        # Observe relative position of K nearest threats
+        
         # Brute force distance
         threats = []
         for o in self.obs:
@@ -243,12 +271,23 @@ class SwarmRLWrapper:
         return np.array(obs_vec, dtype=np.float32)
 
     def _compute_reward(self, agent, u_rl, u_safe, delta):
+        """
+        Compute the reward for the current step.
+
+        Args:
+            agent (dict): Agent state dictionary.
+            u_rl (np.ndarray): RL action.
+            u_safe (np.ndarray): Safe action (after CBF).
+            delta (float): Slack variable from CBF.
+
+        Returns:
+            tuple: (reward, info_dict)
+        """
         current_dist = np.linalg.norm(agent["pos"] - agent["goal"])
 
         # 1. Potential-based Progress (The primary signal)
-        # We use agent_idx 0 specifically for single-agent training
         prev_dist = getattr(self, "_prev_dist_0", current_dist)
-        r_progress = (prev_dist - current_dist) * 150.0  # Increased multiplier
+        r_progress = (prev_dist - current_dist) * 150.0
         self._prev_dist_0 = current_dist
 
         # 2. Safety Intervention Penalty (Keeps it safe)
@@ -261,13 +300,22 @@ class SwarmRLWrapper:
         # 4. Energy/Efficiency Penalty
         r_energy = -0.01 * np.linalg.norm(u_safe) ** 2
 
-        # TOTAL (Notice r_goal is removed)
+        # TOTAL
         total = r_progress + r_mod + r_success + r_energy
         return total, {"dist_goal": current_dist, "mod": modification}
 
     def _is_done(self, agent):
+        """
+        Check if the episode is done.
+
+        Args:
+            agent (dict): Agent state dictionary.
+
+        Returns:
+            bool: True if done, False otherwise.
+        """
         dist_goal = np.linalg.norm(agent["pos"] - agent["goal"])
         if dist_goal < 0.2:
             return True
-        # Timeout?
+        # Timeout is handled by max_steps in the training loop
         return False

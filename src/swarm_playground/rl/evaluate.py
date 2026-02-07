@@ -1,3 +1,8 @@
+"""
+Evaluation script for the trained Swarm RL Agent.
+Loads a trained model and visualizes its performance.
+"""
+
 import os
 import sys
 import torch
@@ -16,6 +21,10 @@ import argparse
 
 
 def main():
+    """
+    Main evaluation function.
+    Parses arguments, loads model, and runs visualization loop.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="config/experiment/default.yaml")
     parser.add_argument(
